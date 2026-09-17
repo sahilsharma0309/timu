@@ -1,0 +1,19 @@
+# Timu v2 — data extraction agent
+# --- core ---
+beautifulsoup4>=4.12
+soupsieve>=2.5          # CSS selector support for bs4 (the `css:` query hint)
+lxml>=5.0
+pandas>=2.0
+
+# --- fast transport: async HTTP/2 + cache + conditional GETs ---
+httpx[http2]>=0.27
+h2>=4.1
+
+# --- interfaces ---
+streamlit>=1.36         # streamlit_app.py
+flask>=3.0              # timu_app.py (the animated HTML UI)
+openpyxl>=3.1           # XLSX export
+
+# --- optional ---
+requests>=2.31          # legacy sequential fetcher only
+playwright>=1.45        # JavaScript rendering; then: python -m playwright install chromium

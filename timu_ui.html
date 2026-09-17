@@ -1,0 +1,730 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>TIMU // data extraction agent</title>
+<style>
+:root{
+  --bg:#04070d; --bg2:#070c16; --panel:rgba(10,18,32,.72);
+  --cyan:#22e6ff; --mint:#39ffb0; --violet:#a97bff; --pink:#ff4d9d; --amber:#ffc447;
+  --txt:#d7e6f5; --dim:#6f8399; --line:rgba(34,230,255,.22);
+  --mono:"SFMono-Regular",Consolas,"Roboto Mono","DejaVu Sans Mono",monospace;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%}
+body{
+  background:radial-gradient(1200px 700px at 12% -10%,#0d2134 0%,transparent 60%),
+             radial-gradient(1000px 600px at 105% 15%,#1a0f2e 0%,transparent 55%),
+             var(--bg);
+  color:var(--txt);font-family:var(--mono);overflow-x:hidden;
+}
+#net{position:fixed;inset:0;z-index:0;opacity:.55}
+.grid{position:fixed;inset:0;z-index:0;pointer-events:none;
+  background-image:linear-gradient(rgba(34,230,255,.055) 1px,transparent 1px),
+                   linear-gradient(90deg,rgba(34,230,255,.055) 1px,transparent 1px);
+  background-size:46px 46px;mask-image:radial-gradient(circle at 50% 40%,#000 25%,transparent 85%);
+  animation:drift 22s linear infinite}
+@keyframes drift{to{background-position:46px 46px,46px 46px}}
+.scan{position:fixed;left:0;right:0;height:180px;z-index:1;pointer-events:none;
+  background:linear-gradient(180deg,transparent,rgba(34,230,255,.06),transparent);
+  animation:scan 7s linear infinite}
+@keyframes scan{0%{top:-180px}100%{top:100%}}
+.wrap{position:relative;z-index:2;max-width:1180px;margin:0 auto;padding:26px 20px 90px}
+
+/* ---------- header ---------- */
+header{display:flex;align-items:center;gap:18px;flex-wrap:wrap;margin-bottom:6px}
+.logo{position:relative;width:56px;height:56px;flex:0 0 auto}
+.logo i{position:absolute;inset:0;border:2px solid var(--cyan);border-radius:14px;
+  animation:spin 9s linear infinite;box-shadow:0 0 24px rgba(34,230,255,.45) inset}
+.logo i:nth-child(2){inset:9px;border-color:var(--pink);animation-duration:6s;animation-direction:reverse}
+.logo i:nth-child(3){inset:19px;border-color:var(--mint);border-radius:6px;animation-duration:4s}
+@keyframes spin{to{transform:rotate(360deg)}}
+h1{font-size:34px;letter-spacing:9px;margin:0;font-weight:800;
+  background:linear-gradient(92deg,var(--cyan),var(--mint) 40%,var(--violet) 75%,var(--pink));
+  -webkit-background-clip:text;background-clip:text;color:transparent;
+  filter:drop-shadow(0 0 16px rgba(34,230,255,.35));position:relative}
+h1::after{content:"TIMU";position:absolute;left:0;top:0;color:var(--pink);opacity:.55;
+  clip-path:inset(46% 0 38% 0);animation:glitch 3.4s steps(2,end) infinite}
+@keyframes glitch{0%,88%{transform:none;opacity:0}90%{transform:translate(-3px,1px);opacity:.6}
+  94%{transform:translate(3px,-1px)}100%{opacity:0}}
+.tag{font-size:11.5px;color:var(--dim);letter-spacing:3px;margin-top:4px}
+.badges{margin-left:auto;display:flex;gap:8px;flex-wrap:wrap}
+.badge{font-size:10px;letter-spacing:2px;padding:5px 11px;border:1px solid var(--line);
+  border-radius:999px;color:var(--cyan);background:rgba(34,230,255,.06)}
+.badge.live::before{content:"";display:inline-block;width:6px;height:6px;border-radius:50%;
+  background:var(--mint);margin-right:7px;box-shadow:0 0 10px var(--mint);animation:blip 1.4s infinite}
+.badge.demo{color:var(--amber);border-color:rgba(255,196,71,.4);background:rgba(255,196,71,.07)}
+@keyframes blip{50%{opacity:.25}}
+
+/* ---------- panels ---------- */
+.panel{margin-top:20px;border:1px solid var(--line);border-radius:18px;background:var(--panel);
+  backdrop-filter:blur(9px);padding:20px;position:relative;overflow:hidden;
+  animation:rise .7s cubic-bezier(.2,.9,.2,1) both}
+.panel::before{content:"";position:absolute;top:0;left:-30%;width:30%;height:2px;
+  background:linear-gradient(90deg,transparent,var(--cyan),transparent);animation:sweep 5s linear infinite}
+@keyframes sweep{to{left:110%}}
+@keyframes rise{from{opacity:0;transform:translateY(18px)}}
+.panel h2{margin:0 0 14px;font-size:12px;letter-spacing:4px;color:var(--cyan);display:flex;
+  align-items:center;gap:9px}
+.panel h2 b{color:var(--dim);font-weight:400;letter-spacing:1px;text-transform:none;font-size:11px}
+.panel h2::before{content:"";width:7px;height:7px;background:var(--cyan);transform:rotate(45deg);
+  box-shadow:0 0 12px var(--cyan)}
+
+/* ---------- targets ---------- */
+.chiprow{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px;min-height:4px}
+.chip{display:flex;align-items:center;gap:9px;padding:7px 10px 7px 12px;border-radius:10px;
+  border:1px solid rgba(57,255,176,.34);background:rgba(57,255,176,.08);font-size:12.5px;
+  color:#c9ffe9;animation:pop .35s cubic-bezier(.2,1.6,.4,1) both;max-width:100%}
+@keyframes pop{from{opacity:0;transform:scale(.7) translateY(6px)}}
+.chip span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:330px}
+.chip u{font-size:10px;color:var(--dim);text-decoration:none}
+.chip button{background:none;border:none;color:var(--pink);cursor:pointer;font-size:15px;line-height:1;padding:0 2px}
+.chip.bad{border-color:rgba(255,77,157,.45);background:rgba(255,77,157,.08);color:#ffd5e6}
+.inrow{display:flex;gap:10px;flex-wrap:wrap}
+input[type=text],textarea{flex:1;min-width:240px;background:rgba(4,10,20,.85);color:var(--txt);
+  border:1px solid var(--line);border-radius:12px;padding:13px 15px;font-family:var(--mono);
+  font-size:13.5px;outline:none;transition:.22s}
+input[type=text]:focus,textarea:focus{border-color:var(--cyan);
+  box-shadow:0 0 0 3px rgba(34,230,255,.12),0 0 22px rgba(34,230,255,.18) inset}
+textarea{min-height:92px;resize:vertical;line-height:1.55;width:100%}
+.hint{font-size:10.5px;color:var(--dim);margin-top:9px;letter-spacing:.6px}
+.pills{display:flex;gap:7px;flex-wrap:wrap;margin-top:11px}
+.pill{font-size:10.5px;padding:6px 11px;border:1px dashed rgba(169,123,255,.42);border-radius:999px;
+  color:#cbb6ff;cursor:pointer;transition:.2s;background:rgba(169,123,255,.05)}
+.pill:hover{background:rgba(169,123,255,.2);transform:translateY(-2px)}
+
+/* ---------- buttons ---------- */
+.btn{border:none;cursor:pointer;font-family:var(--mono);font-weight:700;letter-spacing:2.5px;
+  font-size:12px;padding:14px 26px;border-radius:12px;color:#03131a;position:relative;overflow:hidden;
+  background:linear-gradient(95deg,var(--cyan),var(--mint));transition:.22s;
+  box-shadow:0 8px 28px rgba(34,230,255,.24)}
+.btn:hover{transform:translateY(-2px);box-shadow:0 12px 34px rgba(34,230,255,.4)}
+.btn:disabled{opacity:.45;cursor:not-allowed;transform:none}
+.btn.ghost{background:transparent;color:var(--cyan);border:1px solid var(--line);box-shadow:none}
+.btn.ghost:hover{background:rgba(34,230,255,.1)}
+.btn.danger{background:linear-gradient(95deg,var(--pink),#ff8a5c);color:#1a0410;
+  box-shadow:0 8px 24px rgba(255,77,157,.26)}
+.btn.small{padding:9px 15px;font-size:10.5px;letter-spacing:1.6px}
+.btn::after{content:"";position:absolute;inset:0;background:linear-gradient(90deg,transparent,
+  rgba(255,255,255,.55),transparent);transform:translateX(-100%)}
+.btn:hover::after{animation:shine .8s}
+@keyframes shine{to{transform:translateX(100%)}}
+.actions{display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin-top:18px}
+.opts{display:flex;gap:18px;flex-wrap:wrap;align-items:center;margin-top:14px;font-size:11px;color:var(--dim)}
+.opts label{display:flex;align-items:center;gap:8px;cursor:pointer}
+.opts input[type=range]{width:110px;accent-color:var(--cyan)}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.seg button{background:transparent;border:none;color:var(--dim);font-family:var(--mono);
+  font-size:10px;letter-spacing:1.6px;padding:7px 11px;cursor:pointer;transition:.2s}
+.seg button:hover{color:var(--txt);background:rgba(34,230,255,.08)}
+.seg button.on{background:linear-gradient(95deg,var(--cyan),var(--mint));color:#03131a;font-weight:700}
+#waitwrap{display:none}
+#waitwrap input{min-width:180px;padding:8px 11px;font-size:11.5px}
+.presets{display:flex;gap:7px;flex-wrap:wrap;margin-top:12px;align-items:center}
+.preset{font-size:10.5px;padding:6px 10px;border:1px solid rgba(57,255,176,.35);border-radius:999px;
+  color:#c9ffe9;cursor:pointer;background:rgba(57,255,176,.06);transition:.2s;display:flex;gap:7px;align-items:center}
+.preset:hover{background:rgba(57,255,176,.18);transform:translateY(-2px)}
+.preset b{font-weight:600}.preset i{font-style:normal;color:var(--pink);font-size:12px}
+.tab.intel.on{background:linear-gradient(95deg,var(--amber),var(--pink));color:#1a0d04}
+.api{font-size:11.5px;border-top:1px dashed rgba(255,196,71,.25);padding:7px 0;display:flex;gap:10px}
+.api b{color:var(--amber);font-size:10px;min-width:54px}
+.api a{color:var(--cyan);text-decoration:none;word-break:break-all}
+.sw{width:38px;height:20px;border-radius:999px;border:1px solid var(--line);background:rgba(4,10,20,.9);
+  position:relative;transition:.25s;flex:0 0 auto}
+.sw::after{content:"";position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:50%;
+  background:var(--dim);transition:.25s}
+.sw.on{border-color:var(--mint);background:rgba(57,255,176,.16)}
+.sw.on::after{left:20px;background:var(--mint);box-shadow:0 0 10px var(--mint)}
+
+/* ---------- progress / terminal ---------- */
+#progwrap{display:none}
+.bar{height:5px;border-radius:99px;background:rgba(34,230,255,.12);overflow:hidden;margin-bottom:14px}
+.bar i{display:block;height:100%;width:0;border-radius:99px;
+  background:linear-gradient(90deg,var(--cyan),var(--mint),var(--violet));transition:width .45s;
+  box-shadow:0 0 16px var(--cyan)}
+#term{height:200px;overflow:auto;font-size:11.5px;line-height:1.75;background:rgba(2,6,12,.75);
+  border:1px solid rgba(34,230,255,.14);border-radius:12px;padding:13px 15px;white-space:pre-wrap}
+#term div{animation:fadein .25s both}
+@keyframes fadein{from{opacity:0;transform:translateX(-6px)}}
+.t-ok{color:var(--mint)} .t-err{color:var(--pink)} .t-info{color:var(--cyan)}
+.t-dim{color:var(--dim)} .t-warn{color:var(--amber)}
+.cursor::after{content:"▊";animation:blip .8s steps(2) infinite;color:var(--mint)}
+
+/* ---------- results ---------- */
+#results{display:none}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(122px,1fr));gap:12px;margin-bottom:18px}
+.stat{border:1px solid var(--line);border-radius:14px;padding:13px;text-align:center;
+  background:rgba(34,230,255,.045)}
+.stat b{display:block;font-size:25px;color:var(--mint);text-shadow:0 0 18px rgba(57,255,176,.45)}
+.stat u{font-size:9.5px;color:var(--dim);letter-spacing:2px;text-decoration:none}
+.tabs{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px}
+.tab{font-size:11px;padding:9px 14px;border-radius:10px;border:1px solid var(--line);cursor:pointer;
+  color:var(--dim);background:rgba(4,10,20,.6);transition:.2s;max-width:260px;overflow:hidden;
+  text-overflow:ellipsis;white-space:nowrap}
+.tab:hover{color:var(--txt);border-color:var(--cyan)}
+.tab.on{color:#03131a;background:linear-gradient(95deg,var(--cyan),var(--mint));border-color:transparent;
+  font-weight:700}
+.tab.common.on{background:linear-gradient(95deg,var(--violet),var(--pink));color:#12041a}
+.tab.fail{color:var(--pink);border-color:rgba(255,77,157,.4)}
+.fieldcard{border:1px solid var(--line);border-radius:14px;margin-bottom:11px;overflow:hidden;
+  background:rgba(4,10,20,.5);animation:rise .45s both}
+.fieldcard>h3{margin:0;padding:13px 16px;font-size:11.5px;letter-spacing:2.6px;color:var(--cyan);
+  cursor:pointer;display:flex;align-items:center;gap:10px;user-select:none}
+.fieldcard>h3 em{margin-left:auto;font-style:normal;font-size:10px;color:var(--dim)}
+.fieldcard>h3 s{text-decoration:none;font-size:13px;transition:.25s;color:var(--dim)}
+.fieldcard.open>h3 s{transform:rotate(90deg)}
+.fieldbody{display:none;padding:0 16px 14px;max-height:430px;overflow:auto}
+.fieldcard.open .fieldbody{display:block}
+.kv{font-size:12px;line-height:1.7;border-top:1px dashed rgba(34,230,255,.12);padding:7px 0;
+  display:flex;gap:12px;word-break:break-word}
+.kv b{color:var(--violet);font-weight:600;min-width:120px;flex:0 0 auto;font-size:11px}
+.kv span{flex:1}
+.kv a{color:var(--cyan);text-decoration:none}.kv a:hover{text-decoration:underline}
+table.dt{width:100%;border-collapse:collapse;font-size:11.5px;margin:8px 0}
+table.dt th{text-align:left;color:var(--mint);border-bottom:1px solid var(--line);padding:6px 8px;
+  position:sticky;top:0;background:#061020}
+table.dt td{padding:5px 8px;border-bottom:1px dashed rgba(34,230,255,.1);vertical-align:top}
+.sitehead{font-size:11px;color:var(--dim);margin-bottom:14px;word-break:break-all}
+.sitehead a{color:var(--cyan);text-decoration:none}
+.failbox{border:1px solid rgba(255,77,157,.4);background:rgba(255,77,157,.07);border-radius:12px;
+  padding:16px;font-size:12px;color:#ffd5e6;line-height:1.7}
+.filterrow{display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap}
+.dl{display:flex;gap:10px;flex-wrap:wrap;margin-top:6px}
+footer{text-align:center;font-size:10px;color:var(--dim);letter-spacing:2.4px;margin-top:34px}
+.toast{position:fixed;right:22px;bottom:22px;z-index:9;padding:13px 18px;border-radius:12px;
+  border:1px solid var(--line);background:rgba(6,14,26,.95);font-size:12px;color:var(--txt);
+  box-shadow:0 12px 40px rgba(0,0,0,.6);animation:pop .3s both}
+::-webkit-scrollbar{width:9px;height:9px}
+::-webkit-scrollbar-thumb{background:rgba(34,230,255,.28);border-radius:9px}
+::-webkit-scrollbar-track{background:transparent}
+</style>
+</head>
+<body>
+<canvas id="net"></canvas><div class="grid"></div><div class="scan"></div>
+
+<div class="wrap">
+  <header>
+    <div class="logo"><i></i><i></i><i></i></div>
+    <div>
+      <h1>TIMU</h1>
+      <div class="tag">QUERY&nbsp;→&nbsp;DISCOVER&nbsp;→&nbsp;RENDER&nbsp;→&nbsp;EXTRACT&nbsp;→&nbsp;COMPARE&nbsp;→&nbsp;DOWNLOAD</div>
+    </div>
+    <div class="badges">
+      <div class="badge live" id="modebadge">ENGINE ONLINE</div>
+      <div class="badge">MAX 10 TARGETS</div>
+      <div class="badge" id="verbadge">v2.0</div>
+    </div>
+  </header>
+
+  <!-- TARGETS -->
+  <section class="panel" style="animation-delay:.05s">
+    <h2>TARGETS <b>— url ya sirf site ka naam · Enter dabao · max 10</b></h2>
+    <div class="chiprow" id="chips"></div>
+    <div class="inrow">
+      <input type="text" id="tin" placeholder="e.g. https://example.com/products   ya   flipkart   ya   3 urls paste kar do" autocomplete="off" />
+      <button class="btn ghost small" id="addbtn">+ ADD</button>
+      <button class="btn ghost small" id="clrbtn">CLEAR</button>
+    </div>
+    <div class="hint">Multiple ek saath: comma / space / newline se separate karke paste karo — sab chips ban jayenge.
+      Bare name (jaise <b>wikipedia</b>) pe Timu khud .com/.org/.in probe karta hai.</div>
+  </section>
+
+  <!-- QUERY -->
+  <section class="panel" style="animation-delay:.12s">
+    <h2>QUERY <b>— kya nikalna hai, apni bhasha me likho</b></h2>
+    <textarea id="q" placeholder="e.g. saare product names aur unki price nikalo&#10;e.g. contact email, phone number aur address chahiye&#10;e.g. all headings + article links&#10;e.g. css: .product-card h2"></textarea>
+    <div class="pills" id="pills"></div>
+    <div class="opts">
+      <label>PAGES/SITE <input type="range" id="pages" min="1" max="8" value="1" /><b id="pagesv" style="color:var(--cyan)">1</b></label>
+      <label>RENDER
+        <div class="seg" id="render">
+          <button class="on" data-v="auto" title="HTTP first; JS page mile to browser pe switch">AUTO</button
+          ><button data-v="http" title="sirf HTTP — sabse fast">HTTP</button
+          ><button data-v="browser" title="Playwright Chromium se render (JS sites)">BROWSER</button>
+        </div>
+      </label>
+      <label id="waitwrap">WAIT FOR <input type="text" id="waitfor" placeholder="css selector e.g. .product-card" /></label>
+    </div>
+    <div class="opts">
+      <label id="robotsL"><div class="sw on" id="robots"></div> RESPECT ROBOTS.TXT</label>
+      <label id="cacheL"><div class="sw on" id="cache"></div> CACHE + 304s</label>
+      <label id="discL"><div class="sw on" id="disc"></div> SITEMAP / FEED / PAGINATION DISCOVERY</label>
+      <label id="llmL"><div class="sw" id="llm"></div> AI SHAPING (needs key)</label>
+    </div>
+    <div class="actions">
+      <button class="btn" id="go">⚡ EXTRACT DATA</button>
+      <button class="btn danger" id="reset">⟳ RESET</button>
+      <button class="btn ghost small" id="savepreset">★ SAVE PRESET</button>
+      <span class="hint" id="cfgnote" style="margin:0"></span>
+    </div>
+    <div class="presets" id="presets"></div>
+  </section>
+
+  <!-- PROGRESS -->
+  <section class="panel" id="progwrap" style="animation-delay:.02s">
+    <h2>LIVE FEED <b id="phase">idle</b></h2>
+    <div class="bar"><i id="barfill"></i></div>
+    <div id="term"></div>
+  </section>
+
+  <!-- RESULTS -->
+  <section class="panel" id="results">
+    <h2>EXTRACTED DATA <b id="rq"></b></h2>
+    <div class="stats" id="stats"></div>
+    <div class="dl" id="dls"></div>
+    <div class="filterrow" style="margin-top:16px">
+      <input type="text" id="filter" placeholder="filter inside results…" />
+      <button class="btn ghost small" id="expandall">EXPAND ALL</button>
+      <button class="btn ghost small" id="collapseall">COLLAPSE</button>
+    </div>
+    <div class="tabs" id="tabs"></div>
+    <div id="pane"></div>
+  </section>
+
+  <footer>TIMU · DATA SCRAPING AGENT · BE POLITE, RESPECT robots.txt &amp; TERMS OF SERVICE</footer>
+</div>
+
+<script>
+/* ======================================================= particle network */
+(function(){
+  const c=document.getElementById('net'),x=c.getContext('2d');let w,h,P=[];
+  function rs(){w=c.width=innerWidth;h=c.height=innerHeight;
+    const n=Math.min(90,Math.floor(w*h/17000));P=[];
+    for(let i=0;i<n;i++)P.push({x:Math.random()*w,y:Math.random()*h,
+      vx:(Math.random()-.5)*.35,vy:(Math.random()-.5)*.35,r:Math.random()*1.7+.5});}
+  addEventListener('resize',rs);rs();
+  let mx=-999,my=-999;addEventListener('mousemove',e=>{mx=e.clientX;my=e.clientY});
+  (function loop(){x.clearRect(0,0,w,h);
+    for(const p of P){p.x+=p.vx;p.y+=p.vy;
+      if(p.x<0||p.x>w)p.vx*=-1;if(p.y<0||p.y>h)p.vy*=-1;
+      x.beginPath();x.arc(p.x,p.y,p.r,0,7);x.fillStyle='rgba(34,230,255,.75)';x.fill();}
+    for(let i=0;i<P.length;i++)for(let j=i+1;j<P.length;j++){
+      const a=P[i],b=P[j],d=Math.hypot(a.x-b.x,a.y-b.y);
+      if(d<128){x.strokeStyle='rgba(57,255,176,'+(.16*(1-d/128))+')';x.lineWidth=.8;
+        x.beginPath();x.moveTo(a.x,a.y);x.lineTo(b.x,b.y);x.stroke();}}
+    for(const p of P){const d=Math.hypot(p.x-mx,p.y-my);
+      if(d<170){x.strokeStyle='rgba(169,123,255,'+(.3*(1-d/170))+')';x.lineWidth=.9;
+        x.beginPath();x.moveTo(p.x,p.y);x.lineTo(mx,my);x.stroke();}}
+    requestAnimationFrame(loop);})();
+})();
+
+/* ================================================================ state */
+const S={targets:[],report:null,active:0,busy:false,demo:false};
+const $=id=>document.getElementById(id);
+const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m]));
+const EX=["saare product names aur price nikalo","contact email + phone number + address",
+  "all headings and internal links","latest news article titles with dates",
+  "sabhi tables ka data","images with alt text","social media handles",
+  "pricing plans and features","job listings with company name","css: .card h3"];
+
+/* chips ---------------------------------------------------------------- */
+function addTargets(raw){
+  const parts=String(raw||'').split(/[\s,;\n]+/).map(s=>s.trim()).filter(Boolean);
+  let added=0;
+  for(const p of parts){
+    if(S.targets.length>=10){toast('Limit: 10 targets max');break;}
+    if(S.targets.includes(p)){continue;}
+    S.targets.push(p);added++;
+  }
+  drawChips();return added;
+}
+function drawChips(){
+  $('chips').innerHTML=S.targets.map((t,i)=>{
+    const looksUrl=/^https?:\/\//i.test(t), dom=/^[\w.-]+\.[a-z]{2,}/i.test(t);
+    const kind=looksUrl?'URL':(dom?'DOMAIN':'NAME→probe');
+    return `<div class="chip"><u>${String(i+1).padStart(2,'0')}</u><span title="${esc(t)}">${esc(t)}</span>
+      <u>${kind}</u><button data-i="${i}" title="remove">×</button></div>`}).join('');
+  $('chips').querySelectorAll('button').forEach(b=>b.onclick=()=>{
+    S.targets.splice(+b.dataset.i,1);drawChips()});
+  $('cfgnote').textContent=S.targets.length?`${S.targets.length} target(s) armed`:'';
+}
+$('addbtn').onclick=()=>{if(addTargets($('tin').value))$('tin').value=''};
+$('clrbtn').onclick=()=>{S.targets=[];drawChips()};
+$('tin').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();$('addbtn').click();}});
+$('tin').addEventListener('paste',e=>{const t=(e.clipboardData||window.clipboardData).getData('text');
+  if(/[\s,;\n]/.test(t.trim())){e.preventDefault();addTargets(t);$('tin').value='';}});
+$('pills').innerHTML=EX.map(e=>`<div class="pill">${esc(e)}</div>`).join('');
+$('pills').querySelectorAll('.pill').forEach(p=>p.onclick=()=>{
+  $('q').value=($('q').value.trim()?$('q').value.trim()+'\n':'')+p.textContent;$('q').focus()});
+$('pages').oninput=()=>$('pagesv').textContent=$('pages').value;
+document.querySelectorAll('.sw').forEach(s=>s.onclick=()=>s.classList.toggle('on'));
+/* render mode segmented control */
+S.render='auto';
+$('render').querySelectorAll('button').forEach(b=>b.onclick=()=>{
+  $('render').querySelectorAll('button').forEach(x=>x.classList.remove('on'));
+  b.classList.add('on');S.render=b.dataset.v;
+  $('waitwrap').style.display=(S.render==='browser')?'flex':'none';
+  if(S.render==='browser')toast('Browser render: pehli baar `python -m playwright install chromium` chahiye');
+});
+
+/* ---- presets (localStorage) ---- */
+const PKEY='timu.presets.v2';
+function presets(){try{return JSON.parse(localStorage.getItem(PKEY)||'[]')}catch(_e){return[]}}
+function drawPresets(){
+  const ps=presets();
+  $('presets').innerHTML=ps.length
+    ? '<span class="hint" style="margin:0">PRESETS:</span>'+ps.map((p,i)=>
+        `<div class="preset" data-i="${i}"><b>${esc(p.name)}</b><u style="color:var(--dim);font-size:9.5px">${p.targets.length}×</u><i data-del="${i}" title="delete">×</i></div>`).join('')
+    : '';
+  $('presets').querySelectorAll('.preset').forEach(el=>el.onclick=e=>{
+    if(e.target.dataset.del!==undefined){
+      const ps=presets();ps.splice(+e.target.dataset.del,1);
+      localStorage.setItem(PKEY,JSON.stringify(ps));drawPresets();return;}
+    const p=presets()[+el.dataset.i];if(!p)return;
+    S.targets=p.targets.slice(0,10);drawChips();$('q').value=p.query||'';
+    $('pages').value=p.pages||1;$('pagesv').textContent=$('pages').value;
+    S.render=p.render||'auto';
+    $('render').querySelectorAll('button').forEach(b=>b.classList.toggle('on',b.dataset.v===S.render));
+    $('waitwrap').style.display=(S.render==='browser')?'flex':'none';
+    $('waitfor').value=p.wait_for||'';
+    $('robots').classList.toggle('on',p.respect_robots!==false);
+    $('cache').classList.toggle('on',p.use_cache!==false);
+    $('disc').classList.toggle('on',p.discover!==false);
+    toast('preset loaded: '+p.name);
+  });
+}
+$('savepreset').onclick=()=>{
+  if(!S.targets.length){toast('Pehle targets daalo');return}
+  const name=(prompt('Preset ka naam?','')||'').trim()||('preset '+(presets().length+1));
+  const ps=presets();
+  ps.unshift({name,targets:S.targets.slice(),query:$('q').value,pages:+$('pages').value,
+    render:S.render,wait_for:$('waitfor').value,
+    respect_robots:$('robots').classList.contains('on'),
+    use_cache:$('cache').classList.contains('on'),
+    discover:$('disc').classList.contains('on')});
+  localStorage.setItem(PKEY,JSON.stringify(ps.slice(0,12)));drawPresets();toast('preset saved: '+name);
+};
+
+/* terminal ------------------------------------------------------------- */
+function log(msg,cls){const t=$('term');const d=document.createElement('div');
+  d.className=cls||'t-dim';d.textContent=msg;t.appendChild(d);t.scrollTop=t.scrollHeight;
+  while(t.children.length>500)t.removeChild(t.firstChild);}
+function stamp(){return new Date().toLocaleTimeString('en-GB',{hour12:false})}
+function bar(p){$('barfill').style.width=Math.max(0,Math.min(100,p))+'%'}
+function toast(m){const d=document.createElement('div');d.className='toast';d.textContent=m;
+  document.body.appendChild(d);setTimeout(()=>d.remove(),3400)}
+
+/* ============================================================== run */
+$('go').onclick=run;
+async function run(){
+  if(S.busy)return;
+  if(!S.targets.length){addTargets($('tin').value);$('tin').value='';}
+  if(!S.targets.length){toast('Pehle koi URL ya site name daalo');$('tin').focus();return}
+  S.busy=true;$('go').disabled=true;$('results').style.display='none';
+  $('progwrap').style.display='block';$('term').innerHTML='';bar(4);
+  $('phase').textContent='running…';$('phase').className='cursor';
+  const payload={targets:S.targets,query:$('q').value,
+    pages:+$('pages').value,respect_robots:$('robots').classList.contains('on'),
+    use_llm:$('llm').classList.contains('on'),render:S.render,
+    wait_for:$('waitfor').value.trim()||null,
+    use_cache:$('cache').classList.contains('on'),
+    discover:$('disc').classList.contains('on')};
+  log(`[${stamp()}] TIMU boot · ${S.targets.length} target(s)`,'t-info');
+  log(`[${stamp()}] query: ${payload.query||'(none → default fields)'}`,'t-dim');
+  let done=0;const total=S.targets.length;
+  try{
+    const r=await fetch('/api/scrape',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify(payload)});
+    if(!r.ok||!r.body)throw new Error('HTTP '+r.status);
+    const rd=r.body.getReader(),dec=new TextDecoder();let buf='';
+    while(true){const{value,done:fin}=await rd.read();if(fin)break;
+      buf+=dec.decode(value,{stream:true});const lines=buf.split('\n');buf=lines.pop();
+      for(const ln of lines){if(!ln.trim())continue;let e;try{e=JSON.parse(ln)}catch(_e){continue}
+        if(e.event==='run_start'){log(`[${stamp()}] fields → ${(e.intents||[]).join(', ')}`,'t-info');
+          if(e.selector)log(`[${stamp()}] css selector → ${e.selector}`,'t-warn');bar(10)}
+        else if(e.event==='transport'){log(`[${stamp()}] transport: ${e.mode} · render=${e.render} · cache=${e.cache?'on':'off'}`,'t-info')}
+        else if(e.event==='warn'){log(`[${stamp()}] ⚠ ${e.message}`,'t-warn')}
+        else if(e.event==='fetch_done'){log(`[${stamp()}] ⤓ ${e.target} → ${e.pages} page(s) via ${e.renderer}${e.cached?` (${e.cached} from cache)`:''}`,'t-dim');
+          (e.notes||[]).forEach(n=>log(`[${stamp()}]   ↳ ${n}`,'t-warn'))}
+        else if(e.event==='site_start'){log(`[${stamp()}] ⇢ fetching ${e.target}`,'t-dim')}
+        else if(e.event==='site_done'){done++;bar(10+80*done/total);
+          if(e.ok){const n=Object.values(e.counts||{}).reduce((a,b)=>a+b,0);
+            log(`[${stamp()}] ✓ ${e.target} → ${n} records  (${Object.keys(e.counts||{}).join(', ')})`,'t-ok')}
+          else log(`[${stamp()}] ✕ ${e.target} → ${e.error}`,'t-err')}
+        else if(e.event==='report'){S.report=e.report;bar(100)}
+        else if(e.event==='error'){log(`[${stamp()}] ENGINE ERROR: ${e.error}`,'t-err')}
+      }}
+    if(!S.report)throw new Error('no report received');
+  }catch(err){
+    log(`[${stamp()}] backend not reachable (${err.message}) → DEMO MODE`,'t-warn');
+    $('modebadge').textContent='DEMO MODE';$('modebadge').className='badge demo';
+    S.demo=true;S.report=await demoRun(payload,log);bar(100);
+  }
+  $('phase').textContent='complete';$('phase').className='';
+  log(`[${stamp()}] done in ${S.report.elapsed_s}s · ${S.report.summary.succeeded}/${S.report.summary.requested} ok · ${S.report.summary.total_records} records`,'t-ok');
+  render();S.busy=false;$('go').disabled=false;
+}
+
+/* ============================================================ rendering */
+function render(){
+  const R=S.report;if(!R)return;
+  $('results').style.display='block';
+  $('rq').textContent=R.query?('“'+R.query.replace(/\s+/g,' ').slice(0,90)+'”'):'(default fields)';
+  const c=R.common||{},shared=Object.values(c.shared_values||{}).reduce((a,b)=>a+b.length,0);
+  const su=R.summary||{};
+  $('stats').innerHTML=[
+    ['SITES OK',`${su.succeeded}/${su.requested}`],
+    ['PAGES',su.pages_fetched!=null?su.pages_fetched:'—'],
+    ['RECORDS',su.total_records],
+    ['COMMON VALUES',shared||(c.values_on_multiple_sites||[]).length],
+    ['CACHE HITS',su.cache_hits!=null?su.cache_hits:0],
+    ['SECONDS',R.elapsed_s]
+  ].map(([k,v])=>`<div class="stat"><b>${esc(v)}</b><u>${k}</u></div>`).join('');
+
+  $('dls').innerHTML=['json','csv','md','xlsx'].map(f=>
+    `<button class="btn small" data-f="${f}">⬇ ${f.toUpperCase()}</button>`).join('')+
+    `<button class="btn ghost small" id="copyjson">⧉ COPY JSON</button>`;
+  $('dls').querySelectorAll('[data-f]').forEach(b=>b.onclick=()=>download(b.dataset.f));
+  $('copyjson').onclick=()=>{navigator.clipboard.writeText(JSON.stringify(S.report,null,2));
+    toast('JSON copied')};
+
+  const tabs=[];
+  if((R.sites||[]).filter(s=>s&&s.ok).length>1||c.shared_fields)
+    tabs.push(`<div class="tab common ${S.active===-1?'on':''}" data-i="-1">◈ COMMON DATA</div>`);
+  tabs.push(`<div class="tab intel ${S.active===-2?'on':''}" data-i="-2">⚡ FETCH INTEL</div>`);
+  (R.sites||[]).forEach((s,i)=>tabs.push(
+    `<div class="tab ${s&&!s.ok?'fail':''} ${S.active===i?'on':''}" data-i="${i}" title="${esc(s.target)}">
+      ${s&&s.ok?'●':'✕'} ${esc(s.target)}</div>`));
+  $('tabs').innerHTML=tabs.join('');
+  $('tabs').querySelectorAll('.tab').forEach(t=>t.onclick=()=>{S.active=+t.dataset.i;render()});
+  $('pane').innerHTML=S.active===-1?commonHTML(c)
+    :S.active===-2?intelHTML(R):siteHTML((R.sites||[])[S.active]);
+  wireCards();applyFilter();
+}
+function wireCards(){
+  $('pane').querySelectorAll('.fieldcard>h3').forEach(h=>h.onclick=()=>h.parentElement.classList.toggle('open'));
+}
+function card(title,count,body,open){
+  return `<div class="fieldcard${open?' open':''}"><h3><s>▸</s>${esc(title)}<em>${count} items</em></h3>
+    <div class="fieldbody">${body}</div></div>`;
+}
+function val(v){
+  if(v==null)return '';
+  if(typeof v==='string'){
+    if(/^https?:\/\//i.test(v))return `<a href="${esc(v)}" target="_blank" rel="noopener noreferrer">${esc(v)}</a>`;
+    return esc(v);
+  }
+  if(typeof v!=='object')return esc(v);
+  if(Array.isArray(v))return v.map(val).join(' · ');
+  return Object.entries(v).filter(([,x])=>x!=null&&x!=='')
+    .map(([k,x])=>`<b style="color:var(--mint);font-size:10.5px">${esc(k)}</b> ${val(x)}`).join('&nbsp; ');
+}
+function fieldBody(name,v){
+  if(name==='tables'&&Array.isArray(v)){
+    return v.map(t=>{
+      const cols=t.columns||[];
+      return `<div class="kv"><b>${esc(t.caption||'table '+t.index)}</b></div>
+      <table class="dt"><thead><tr>${cols.map(c=>`<th>${esc(c)}</th>`).join('')}</tr></thead>
+      <tbody>${(t.rows||[]).slice(0,200).map(r=>`<tr>${cols.map(c=>`<td>${esc(r[c])}</td>`).join('')}</tr>`).join('')}</tbody></table>`;
+    }).join('');
+  }
+  if(Array.isArray(v))
+    return v.slice(0,400).map((x,i)=>`<div class="kv"><b>${String(i+1).padStart(3,'0')}</b><span>${val(x)}</span></div>`).join('');
+  if(v&&typeof v==='object')
+    return Object.entries(v).map(([k,x])=>`<div class="kv"><b>${esc(k)}</b><span>${val(x)}</span></div>`).join('');
+  return `<div class="kv"><span style="white-space:pre-wrap">${esc(String(v).slice(0,20000))}</span></div>`;
+}
+function siteHTML(s){
+  if(!s)return '<div class="failbox">no data</div>';
+  if(!s.ok)return `<div class="failbox"><b>${esc(s.target)}</b> — extraction failed<br><br>
+    <b style="color:var(--pink)">${esc(s.error||'unknown error')}</b><br><br>
+    <span style="color:var(--dim)">Try: full https:// URL · check spelling · site may block bots or need JavaScript ·
+    if robots.txt disallows it, Timu will not fetch it.</span></div>`;
+  const d=s.data||{},keys=Object.keys(d);
+  return `<div class="sitehead">▸ <a href="${esc(s.url)}" target="_blank" rel="noopener noreferrer">${esc(s.url)}</a>
+    &nbsp;·&nbsp; HTTP ${esc(s.status)} &nbsp;·&nbsp; ${s.pages_fetched} page(s) &nbsp;·&nbsp; ${s.elapsed_ms}ms</div>`+
+    (keys.length?keys.map((k,i)=>card(k,Array.isArray(d[k])?d[k].length:(typeof d[k]==='object'?Object.keys(d[k]).length:1),
+      fieldBody(k,d[k]),i<2)).join(''):'<div class="failbox">page fetched but nothing matched the query</div>');
+}
+function intelHTML(R){
+  const su=R.summary||{};
+  let h=`<div class="sitehead">⚡ transport <b style="color:var(--mint)">${esc(su.transport||'?')}</b>
+    · renderers ${esc((su.renderers||[]).join(', ')||'?')}
+    · ${su.pages_fetched||0} page(s) · ${su.cache_hits||0} from cache
+    · ${su.api_endpoints_found||0} JSON endpoint(s) spotted</div>`;
+  if((su.fetch_notes||[]).length)
+    h+=card('fetch notes',su.fetch_notes.length,
+      su.fetch_notes.map(n=>`<div class="kv"><b>note</b><span>${esc(n)}</span></div>`).join(''),true);
+  for(const s of (R.sites||[])){
+    if(!s)continue;
+    const f=s.fetch||{},d=f.discovery||{},cnt=d.counts||{};
+    let body=`<div class="kv"><b>renderer</b><span>${esc(f.renderer||'?')}</span></div>
+      <div class="kv"><b>pages</b><span>${s.pages_fetched||0} fetched · ${f.from_cache||0} from cache · ${f.attempts||1} attempt(s)</span></div>
+      <div class="kv"><b>status</b><span>${s.ok?('HTTP '+esc(s.status)):('FAILED — '+esc(s.error||''))}</span></div>`;
+    if(Object.keys(cnt).length)
+      body+=`<div class="kv"><b>discovery</b><span>sitemap ${cnt.sitemap||0} · pagination ${cnt.pagination||0} · links ${cnt.link||0} · feeds ${cnt.feeds||0}</span></div>`;
+    (d.sitemaps||[]).forEach(sm=>body+=`<div class="kv"><b>sitemap</b><span>${val(sm.url)} <u style="color:var(--dim);font-size:10px">${sm.urls_found} urls</u></span></div>`);
+    (d.feeds||[]).forEach(u=>body+=`<div class="kv"><b>feed</b><span>${val(u)}</span></div>`);
+    (d.pagination||[]).slice(0,10).forEach(u=>body+=`<div class="kv"><b>next page</b><span>${val(u)}</span></div>`);
+    const eps=f.api_endpoints||[];
+    if(eps.length){
+      body+=`<div class="kv"><b style="color:var(--amber)">API</b><span style="color:var(--amber)">
+        Ye site khud ${eps.length} JSON endpoint call karti hai — inhe direct hit karna sabse clean + fast raasta hai:</span></div>`;
+      eps.forEach(e=>body+=`<div class="api"><b>${esc(e.method||'GET')} ${esc(e.status||'')}</b>
+        <a href="${esc(e.url)}" target="_blank" rel="noopener noreferrer">${esc(e.url)}</a></div>`);
+    }
+    (f.notes||[]).forEach(n=>body+=`<div class="kv"><b>note</b><span style="color:var(--amber)">${esc(n)}</span></div>`);
+    h+=card('⇢ '+s.target,(s.pages_fetched||0),body,true);
+  }
+  return h;
+}
+function commonHTML(c){
+  if(!c||(!Object.keys(c.shared_values||{}).length&&!(c.values_on_multiple_sites||[]).length))
+    return `<div class="failbox">${esc(c&&c.note||'No values were shared between the sites.')}<br><br>
+      <span style="color:var(--dim)">2+ sites successfully scraped hone chahiye, aur unme kuch identical value honi chahiye.</span></div>`;
+  let h=`<div class="sitehead">◈ comparing: ${esc((c.sites_compared||[]).join('  ·  '))}</div>`;
+  const ov=Object.entries(c.overlap_matrix||{});
+  if(ov.length)h+=card('overlap matrix',ov.length,
+    ov.map(([k,v])=>`<div class="kv"><b>${esc(k)}</b><span>${v.shared} shared values · jaccard ${v.jaccard}</span></div>`).join(''),true);
+  for(const [f,rows] of Object.entries(c.shared_values||{}))
+    h+=card('shared · '+f,rows.length,rows.map((r,i)=>
+      `<div class="kv"><b>${String(i+1).padStart(3,'0')}</b><span>${val(r.value)}</span></div>`).join(''),true);
+  if((c.values_on_multiple_sites||[]).length)
+    h+=card('values on 2+ sites',c.values_on_multiple_sites.length,
+      c.values_on_multiple_sites.slice(0,400).map(r=>
+        `<div class="kv"><b>${r.site_count} sites</b><span>${val(r.value)}
+          <u style="color:var(--dim);font-size:10px">${esc((r.sites||[]).join(', '))}</u></span></div>`).join(''),
+      false);
+  return h;
+}
+$('filter').oninput=applyFilter;
+function applyFilter(){
+  const q=$('filter').value.trim().toLowerCase();
+  $('pane').querySelectorAll('.kv,table.dt tbody tr').forEach(el=>{
+    el.style.display=(!q||el.textContent.toLowerCase().includes(q))?'':'none'});
+  if(q)$('pane').querySelectorAll('.fieldcard').forEach(c=>c.classList.add('open'));
+}
+$('expandall').onclick=()=>$('pane').querySelectorAll('.fieldcard').forEach(c=>c.classList.add('open'));
+$('collapseall').onclick=()=>$('pane').querySelectorAll('.fieldcard').forEach(c=>c.classList.remove('open'));
+
+/* ============================================================ download */
+async function download(fmt){
+  const base='timu_'+new Date().toISOString().slice(0,19).replace(/[:T]/g,'-');
+  if(fmt==='xlsx'||S.demo===false){
+    try{
+      const r=await fetch('/api/download/'+fmt,{method:'POST',
+        headers:{'Content-Type':'application/json'},body:JSON.stringify(S.report)});
+      if(!r.ok)throw new Error('HTTP '+r.status);
+      blobSave(await r.blob(),base+'.'+fmt);return;
+    }catch(e){ if(fmt==='xlsx'){toast('XLSX needs the Timu server running');return} }
+  }
+  const txt=fmt==='json'?JSON.stringify(S.report,null,2):fmt==='csv'?toCSV(S.report):toMD(S.report);
+  blobSave(new Blob([txt],{type:'text/plain;charset=utf-8'}),base+'.'+(fmt==='md'?'md':fmt));
+}
+function blobSave(b,name){const u=URL.createObjectURL(b),a=document.createElement('a');
+  a.href=u;a.download=name;a.click();URL.revokeObjectURL(u);toast('saved '+name)}
+function flat(site,field,key,v,out){
+  if(v==null)return;
+  if(Array.isArray(v))v.forEach((x,i)=>flat(site,field,key?key+'.'+i:String(i),x,out));
+  else if(typeof v==='object')Object.entries(v).forEach(([k,x])=>flat(site,field,key?key+'.'+k:k,x,out));
+  else out.push([site.target||'',site.url||'',field,key,String(v)]);
+}
+function toCSV(R){
+  const rows=[['site','url','field','key','value']];
+  (R.sites||[]).forEach(s=>{if(!s)return;
+    if(!s.ok){rows.push([s.target,'','_error','',s.error||'']);return}
+    Object.entries(s.data||{}).forEach(([f,v])=>flat(s,f,'',v,rows))});
+  Object.entries((R.common||{}).shared_values||{}).forEach(([f,vs])=>
+    vs.forEach(r=>rows.push(['_COMMON_','',f,'shared',String(r.value)])));
+  return rows.map(r=>r.map(c=>`"${String(c==null?'':c).replace(/"/g,'""')}"`).join(',')).join('\n');
+}
+function toMD(R){
+  let L=['# Timu extraction report','',`- **Query:** ${R.query||'(none)'}`,
+    `- **Generated:** ${R.generated_at}`,`- **Sites:** ${R.summary.succeeded}/${R.summary.requested}`,
+    `- **Records:** ${R.summary.total_records}`,''];
+  (R.sites||[]).forEach(s=>{if(!s)return;L.push('## '+s.target);
+    if(!s.ok){L.push('FAILED — '+(s.error||''),'');return}
+    L.push('`'+s.url+'`','');
+    Object.entries(s.data||{}).forEach(([f,v])=>{L.push('### '+f);
+      const arr=Array.isArray(v)?v:[v];
+      arr.slice(0,80).forEach(x=>L.push('- '+(typeof x==='object'?JSON.stringify(x):String(x)).slice(0,300)))});
+    L.push('')});
+  L.push('## Common across sites','');
+  const c=R.common||{};
+  Object.entries(c.shared_values||{}).forEach(([f,rows])=>{L.push('### '+f);
+    rows.slice(0,60).forEach(r=>L.push('- '+String(r.value).slice(0,250)))});
+  (c.values_on_multiple_sites||[]).slice(0,60).forEach(r=>
+    L.push(`- ${String(r.value).slice(0,200)} _(${r.site_count} sites)_`));
+  return L.join('\n');
+}
+
+/* =============================================================== reset */
+$('reset').onclick=()=>{
+  S.targets=[];S.report=null;S.active=0;S.busy=false;
+  drawChips();$('tin').value='';$('q').value='';$('filter').value='';
+  $('pages').value=1;$('pagesv').textContent='1';
+  $('robots').classList.add('on');$('cache').classList.add('on');$('disc').classList.add('on');
+  $('llm').classList.remove('on');
+  S.render='auto';$('waitfor').value='';$('waitwrap').style.display='none';
+  $('render').querySelectorAll('button').forEach(b=>b.classList.toggle('on',b.dataset.v==='auto'));
+  $('results').style.display='none';$('progwrap').style.display='none';
+  $('term').innerHTML='';$('tabs').innerHTML='';$('pane').innerHTML='';bar(0);
+  $('go').disabled=false;$('phase').textContent='idle';
+  document.querySelectorAll('.panel').forEach((p,i)=>{p.style.animation='none';
+    void p.offsetWidth;p.style.animation=`rise .6s ${i*0.05}s cubic-bezier(.2,.9,.2,1) both`});
+  toast('Timu reset — sab clear');
+};
+
+/* ========================================================== demo engine */
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+async function demoRun(p,say){
+  const t0=Date.now(),sites=[];
+  for(const t of p.targets){
+    say(`[${stamp()}] ⇢ fetching ${t}  (demo)`,'t-dim');await sleep(280+Math.random()*350);
+    const host=String(t).replace(/^https?:\/\//,'').split('/')[0]||t;
+    const data={meta:{title:host+' — official site',description:'Demo extraction for '+host,
+        h1:'Welcome to '+host},
+      headings:[{level:'h1',text:'Welcome to '+host},{level:'h2',text:'Our Products'},
+        {level:'h2',text:'Pricing'},{level:'h2',text:'Contact Us'}],
+      emails:['support@'+host,'info@'+host,'hello@timu.dev'],
+      phones:['+91 98765 43210','+1 415 555 0132'],
+      prices:['₹1,299','₹2,499','$49.00','$99.00'],
+      items:[{name:'Starter Plan',price:'₹1,299',link:'https://'+host+'/plans/starter'},
+        {name:'Pro Plan',price:'₹2,499',link:'https://'+host+'/plans/pro'},
+        {name:'Enterprise',price:'Contact sales',link:'https://'+host+'/plans/ent'}],
+      links:[{text:'About',url:'https://'+host+'/about',internal:true},
+        {text:'Blog',url:'https://'+host+'/blog',internal:true},
+        {text:'Twitter',url:'https://twitter.com/timu',internal:false}],
+      social_links:['https://twitter.com/timu','https://github.com/timu'],
+      query_matches:[{match:'Demo line matching your query on '+host,terms:['demo']}]};
+    const counts={};Object.entries(data).forEach(([k,v])=>counts[k]=Array.isArray(v)?v.length:Object.keys(v).length);
+    sites.push({target:t,url:'https://'+host+'/',ok:true,status:200,pages_fetched:p.pages||1,
+      elapsed_ms:120+Math.floor(Math.random()*600),page_urls:['https://'+host+'/'],data,counts,
+      fetch:{renderer:(p.render==='browser'?'browser':'http'),from_cache:0,attempts:1,
+        discovery:{counts:{sitemap:12,pagination:2,link:8,feeds:1},
+          sitemaps:[{url:'https://'+host+'/sitemap.xml',urls_found:12}],
+          feeds:['https://'+host+'/feed.xml'],pagination:['https://'+host+'/?page=2']},
+        api_endpoints:[{url:'https://'+host+'/api/products?page=1',status:200,method:'GET'},
+          {url:'https://'+host+'/api/prices',status:200,method:'GET'}],
+        notes:['demo: page calls 2 JSON endpoint(s) of its own']}});
+    say(`[${stamp()}] ✓ ${t} → ${Object.values(counts).reduce((a,b)=>a+b,0)} records (demo)`,'t-ok');
+  }
+  const common={sites_compared:p.targets,shared_fields:['meta','emails','prices','items','social_links'],
+    shared_values:{emails:[{value:'hello@timu.dev',field:'emails',sites:sites.length}],
+      prices:[{value:'₹1,299',field:'prices',sites:sites.length},{value:'$49.00',field:'prices',sites:sites.length}],
+      items:[{value:'Starter Plan',field:'items',sites:sites.length}]},
+    values_on_multiple_sites:[{value:'hello@timu.dev',site_count:sites.length,sites:p.targets},
+      {value:'₹1,299',site_count:sites.length,sites:p.targets}],
+    overlap_matrix:sites.length>1?{[p.targets[0]+' ∩ '+p.targets[1]]:{shared:7,jaccard:0.31}}:{}};
+  return {timu_version:'1.0 (demo)',query:p.query,intents:['meta','headings','emails','phones','prices','items','links','query_matches'],
+    generated_at:new Date().toISOString(),elapsed_s:+((Date.now()-t0)/1000).toFixed(2),targets:p.targets,sites,
+    summary:{requested:p.targets.length,succeeded:sites.length,failed:[],
+      total_records:sites.reduce((a,s)=>a+Object.values(s.counts).reduce((x,y)=>x+y,0),0),
+      pages_fetched:sites.length*(p.pages||1),transport:'demo',renderers:[p.render||'auto'],
+      cache_hits:0,api_endpoints_found:sites.length?2:0,
+      fetch_notes:['demo mode — run timu_app.py for real transport stats']},
+    common};
+}
+
+/* boot ping: is the backend there? */
+fetch('/api/health').then(r=>r.json()).then(j=>{
+  $('modebadge').textContent='ENGINE ONLINE';$('verbadge').textContent='v'+(j.version||'1.0');
+  if(j.llm)$('llmL').style.opacity=1;else $('llmL').style.opacity=.45;
+}).catch(()=>{S.demo=true;$('modebadge').textContent='DEMO MODE — no backend';
+  $('modebadge').className='badge demo';$('llmL').style.opacity=.45;
+  log(`[${stamp()}] standalone file — run timu_app.py for real scraping`,'t-warn');});
+drawChips();drawPresets();
+</script>
+</body>
+</html>

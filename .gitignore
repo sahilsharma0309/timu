@@ -1,0 +1,14 @@
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.env
+.timu_cache/
+.timu_cache.sqlite
+.timu_test_cache/
+_timu_export.xlsx
+timu_output.*
+timu_export.*
+.DS_Store
+.idea/
+.vscode/
