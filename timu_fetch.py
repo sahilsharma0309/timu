@@ -544,6 +544,63 @@ NEXT_RE = re.compile(r'<link[^>]+rel=["\']next["\'][^>]*>', re.I)
 A_NEXT_RE = re.compile(r'<a[^>]+rel=["\']next["\'][^>]*href=["\']([^"\']+)["\']', re.I)
 
 
+_MISSING_LIB_RE = re.compile(r"error while loading shared libraries:\s*([^:]+):")
+_BROWSER_PROBE: tuple[bool, str] | None = None
+
+
+def browser_hint(error_text: str) -> str:
+    """Turn a Playwright launch failure into the one line that fixes it."""
+    t = error_text or ""
+    m = _MISSING_LIB_RE.search(t)
+    if m:
+        lib = m.group(1).strip()
+        return (f"Chromium binary hai par OS library `{lib}` missing hai. Streamlit Cloud / "
+                f"Docker pe `packages.txt` (ya apt-get) se system deps chahiye — repo ke "
+                f"packages.txt me list hai; locally: `python -m playwright install-deps`")
+    if "Executable doesn't exist" in t or "no chromium build" in t.lower():
+        return "Chromium install nahi hai — `python -m playwright install chromium` chalao"
+    if "Timeout" in t or "timeout" in t:
+        return "browser launch timeout ho gaya (host pe memory/CPU kam ho sakta hai)"
+    if "Permission" in t or "EACCES" in t:
+        return "browser binary chal nahi paya (permission denied)"
+    return t.strip().splitlines()[0][:160] if t.strip() else "unknown browser launch error"
+
+
+def browser_probe(force: bool = False) -> tuple[bool, str]:
+    """Actually try to start Chromium once and cache the verdict.
+
+    `chromium_available()` only checks that the binary is on disk; a hosted
+    environment can have the binary and still fail to launch it for want of
+    system libraries. This answers the question that matters.
+    """
+    global _BROWSER_PROBE
+    if _BROWSER_PROBE is not None and not force:
+        return _BROWSER_PROBE
+    ok, why = chromium_available()
+    if not ok:
+        _BROWSER_PROBE = (False, browser_hint(why))
+        return _BROWSER_PROBE
+
+    def _try() -> tuple[bool, str]:
+        try:
+            from playwright.sync_api import sync_playwright
+            with sync_playwright() as pw:
+                b = pw.chromium.launch(args=["--no-sandbox"])
+                v = b.version
+                b.close()
+            return True, f"chromium {v} launches fine"
+        except Exception as e:                                       # noqa: BLE001
+            return False, browser_hint(f"{e.__class__.__name__}: {e}")
+
+    import concurrent.futures as _cf                                 # noqa: PLC0415
+    with _cf.ThreadPoolExecutor(max_workers=1) as ex:                # never inside a loop
+        try:
+            _BROWSER_PROBE = ex.submit(_try).result(timeout=90)
+        except Exception as e:                                       # noqa: BLE001
+            _BROWSER_PROBE = (False, browser_hint(f"{e.__class__.__name__}: {e}"))
+    return _BROWSER_PROBE
+
+
 def _xml_locs(text: str) -> tuple[list[str], list[str]]:
     """Return (page urls, nested sitemap urls) from a sitemap document."""
     pages, maps = [], []
@@ -659,6 +716,133 @@ async def discover_urls(fetcher: AsyncHttpFetcher, start_url: str, *,
     return out
 
 
+BLOCK_STATUSES = (401, 403, 405, 406, 429, 451)
+
+
+def parse_robots_groups(raw: str) -> tuple[dict[str, dict], list[str]]:
+    """Group robots.txt rules per user-agent and collect its Sitemap: lines.
+
+    stdlib's RobotFileParser answers "may I fetch this URL" but will not tell you
+    *what a site does permit* — which is exactly what you need when a fetch was
+    refused. Hence this small parser.
+    """
+    groups: dict[str, dict] = {}
+    current: list[str] = []
+    sitemaps: list[str] = []
+    expecting_agents = False
+    for line in (raw or "").splitlines():
+        line = line.split("#", 1)[0].strip()
+        if not line or ":" not in line:
+            continue
+        field, _, value = line.partition(":")
+        field, value = field.strip().lower(), value.strip()
+        if field == "sitemap":
+            if value:
+                sitemaps.append(value)
+            continue
+        if field == "user-agent":
+            if not expecting_agents:
+                current = []
+                expecting_agents = True
+            agent = value.lower() or "*"
+            current.append(agent)
+            groups.setdefault(agent, {"disallow": [], "allow": [], "crawl_delay": None})
+            continue
+        expecting_agents = False
+        for agent in current or ["*"]:
+            g = groups.setdefault(agent, {"disallow": [], "allow": [], "crawl_delay": None})
+            if field == "disallow":
+                g["disallow"].append(value)
+            elif field == "allow":
+                g["allow"].append(value)
+            elif field in ("crawl-delay", "crawl_delay"):
+                try:
+                    g["crawl_delay"] = float(value)
+                except ValueError:
+                    pass
+    return groups, sitemaps
+
+
+async def permitted_routes(f: "AsyncHttpFetcher", url: str, *, want: int = 8,
+                           check_sitemaps: bool = True) -> dict:
+    """A site refused the fetch — report what it *does* permit.
+
+    Reads robots.txt (which usually serves even when pages 403), works out which
+    user-agent group applies to us, and lists the sitemaps the site advertises
+    with a few sample URLs. No probing of undeclared paths, no retrying the
+    refused URL with a different identity: this only reads what the site
+    publishes about itself.
+    """
+    origin = up.urlsplit(url)._replace(path="", query="", fragment="").geturl()
+    out: dict[str, Any] = {"robots_url": up.urljoin(origin, "/robots.txt"),
+                           "robots_available": False, "applies_to": None,
+                           "disallow": [], "allow": [], "crawl_delay": None,
+                           "sitemaps": [], "sample_urls": [], "verdict": "", "notes": []}
+    rp = await f.robots(url)
+    raw = getattr(rp, "_timu_raw", "") if rp else ""
+    ua = (f.cfg.user_agent or "timubot").lower()
+
+    if not raw.strip():
+        out["verdict"] = ("robots.txt nahi mila / khaali hai — refusal server ya CDN side se "
+                          "hai (user-agent ya datacenter IP filter), robots rules ki wajah se "
+                          "nahi. Site ka official API / data feed maango, ya apne network se "
+                          "chalao.")
+        out["notes"].append(out["verdict"])
+        return out
+
+    out["robots_available"] = True
+    groups, sitemaps = parse_robots_groups(raw)
+    picked = next((a for a in groups if a != "*" and a and a in ua), None) or \
+        ("*" if "*" in groups else next(iter(groups), None))
+    g = groups.get(picked or "*", {"disallow": [], "allow": [], "crawl_delay": None})
+    out["applies_to"] = picked
+    out["disallow"] = [d for d in g["disallow"] if d][:40]
+    out["allow"] = [a for a in g["allow"] if a][:40]
+    out["crawl_delay"] = g.get("crawl_delay")
+
+    blanket = any(d.strip() == "/" for d in g["disallow"])
+    if blanket and not g["allow"]:
+        out["verdict"] = (f"robots.txt (group '{picked}') poori site pe automated access mana "
+                          f"karta hai. Yahan Timu ruk jata hai — official API ya written "
+                          f"permission hi aage ka raasta hai.")
+        out["notes"].append(out["verdict"])
+        return out
+
+    if check_sitemaps:
+        cand = sitemaps[:4] or [up.urljoin(origin, p) for p in SITEMAP_PATHS[:2]]
+        for sm in cand:
+            r = await f.get(sm)
+            entry = {"url": sm, "status": r.status if r.ok else (r.status or r.error),
+                     "urls_found": 0, "sample": []}
+            if r.ok and "<" in r.body[:400]:
+                pages, nested = _xml_locs(r.body)
+                if not pages and nested:
+                    entry["nested_sitemaps"] = len(nested)
+                    entry["sample"] = nested[:want]
+                else:
+                    entry["urls_found"] = len(pages)
+                    entry["sample"] = pages[:want]
+                for u in entry["sample"]:
+                    if u not in out["sample_urls"]:
+                        out["sample_urls"].append(u)
+            out["sitemaps"].append(entry)
+
+    allowed_txt = (", ".join(out["allow"][:6]) if out["allow"]
+                   else "robots.txt me koi explicit Allow nahi, par poori site par blanket "
+                        "Disallow bhi nahi hai")
+    out["verdict"] = (f"robots.txt allow karta hai ({allowed_txt}); page fetch phir bhi "
+                      f"refuse hua, to block user-agent/IP level pe hai. "
+                      + (f"Site khud {len(out['sample_urls'])} URL sitemap me publish karti hai "
+                         f"— wahi structured raasta hai."
+                         if out["sample_urls"] else
+                         "Sitemap se bhi kuch nahi mila — official API/feed maango."))
+    out["notes"].append(out["verdict"])
+    if out["crawl_delay"]:
+        out["notes"].append(f"robots.txt Crawl-delay {out['crawl_delay']}s maangta hai — "
+                            f"Timu use follow karta hai.")
+    return out
+
+
 # ------------------------------------------------------------- orchestration ----
 
 async def resolve_first_ok(f: AsyncHttpFetcher, candidates: Sequence[str]) -> FetchResult:
@@ -697,23 +881,35 @@ async def smart_fetch_site(url: str, *, cfg: FetchConfig | None = None,
             if js:
                 use_browser = True
                 notes.append(f"auto-escalated to browser render: {why}")
-        if render == "auto" and not first.ok and first.status in (403, 401):
-            notes.append(f"HTTP {first.status} — server refused TimuBot; "
-                         f"look for an official API or request access")
+        advice: dict = {}
+        if not first.ok and (first.blocked_by_robots or first.status in BLOCK_STATUSES):
+            if first.blocked_by_robots:
+                notes.append("robots.txt ne is URL ko disallow kiya hai — Timu fetch nahi karega")
+            else:
+                notes.append(f"HTTP {first.status} — server refused TimuBot; "
+                             f"checking what this site does permit")
+            advice = await permitted_routes(f, url)
+            notes.extend(advice.get("notes") or [])
 
         results: list[FetchResult] = []
         disc: dict = {}
         if use_browser:
-            if browser is not None:
-                b = browser
-                r = await b.get(url, wait_for=wait_for)
-            elif HAVE_PLAYWRIGHT:
-                async with BrowserFetcher(cfg) as b:
-                    r = await b.get(url, wait_for=wait_for)
-            else:
+            try:
+                if browser is not None:
+                    r = await browser.get(url, wait_for=wait_for)
+                elif HAVE_PLAYWRIGHT:
+                    async with BrowserFetcher(cfg) as b:
+                        r = await b.get(url, wait_for=wait_for)
+                else:
+                    r = first
+                    notes.append("browser render requested but Playwright is not installed "
+                                 "(pip install playwright && "
+                                 "python -m playwright install chromium)")
+            except Exception as e:                                   # noqa: BLE001
                 r = first
-                notes.append("browser render requested but Playwright is not installed "
-                             "(pip install playwright && python -m playwright install chromium)")
+                notes.append(f"browser render unavailable — "
+                             f"{browser_hint(f'{e.__class__.__name__}: {e}')}; "
+                             f"HTTP result use kiya")
             if r.ok:
                 if r.api_hits:
                     notes.append(f"page calls {len(r.api_hits)} JSON endpoint(s) of its own — "
@@ -738,6 +934,7 @@ async def smart_fetch_site(url: str, *, cfg: FetchConfig | None = None,
                     results.extend(await f.get_many(extra))
         return {"url": url, "results": [r for r in results if r.ok] or results[:1],
                 "all_results": results, "discovery": disc, "notes": notes,
+                "advice": advice,
                 "api_endpoints": results[0].api_hits if results else []}
     finally:
         if own_fetcher:
@@ -756,7 +953,15 @@ async def fetch_sites(urls: Sequence[str], *, cfg: FetchConfig | None = None,
         browser = None
         try:
             if need_browser:
-                browser = await BrowserFetcher(cfg).__aenter__()
+                try:
+                    browser = await BrowserFetcher(cfg).__aenter__()
+                except Exception as e:                               # noqa: BLE001
+                    browser = None
+                    render = "http"                                  # degrade, do not abort
+                    say({"event": "warn",
+                         "message": f"browser render unavailable — "
+                                    f"{browser_hint(f'{e.__class__.__name__}: {e}')}; "
+                                    f"HTTP render pe continue kar raha hoon"})
 
             async def one(u: str):
                 say({"event": "site_start", "target": u})

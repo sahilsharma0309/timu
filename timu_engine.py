@@ -53,7 +53,7 @@ __all__ = ["TimuConfig", "TimuScraper", "PageResult", "export_json", "export_csv
            "export_xlsx", "export_markdown", "MAX_TARGETS"]
 
 MAX_TARGETS = 10
-TIMU_VERSION = "2.0"
+TIMU_VERSION = "2.1"
 
 # ---------------------------------------------------------------- config ----
 
@@ -792,6 +792,7 @@ class TimuScraper:
                 "discovery": {k: v for k, v in disc.items() if k in ("counts", "sitemaps",
                                                                      "feeds", "pagination")},
                 "api_endpoints": b.get("api_endpoints") or [],
+                "advice": b.get("advice") or {},
                 "notes": b.get("notes") or []}}
         return out
 
@@ -907,6 +908,14 @@ class TimuScraper:
                                            for s in sites if s),
                 "fetch_notes": [n for s in sites if s
                                 for n in ((s.get("fetch") or {}).get("notes") or [])],
+                "blocked_sites": [{"target": s.get("target"),
+                                   "status": s.get("status") or s.get("error"),
+                                   "verdict": ((s.get("fetch") or {}).get("advice") or {})
+                                   .get("verdict", ""),
+                                   "sample_urls": ((s.get("fetch") or {}).get("advice") or {})
+                                   .get("sample_urls", [])[:5]}
+                                  for s in sites if s and not s.get("ok")
+                                  and ((s.get("fetch") or {}).get("advice"))],
             },
             "common": find_common(sites) if len([s for s in sites if s and s.get("ok")]) > 1 else
                       {"note": "common-data analysis needs 2+ successful sites",

@@ -168,6 +168,11 @@ with st.sidebar:
         help="auto = HTTP se try karo, JS-shell mile to browser. http = sabse fast. "
              "browser = Playwright Chromium (JS sites).")
     if st.session_state.render == "browser":
+        if tf:
+            _ok, _why = tf.browser_probe()
+            if not _ok:
+                st.warning(f"browser render available nahi hai — {_why}. Timu HTTP render pe "
+                           f"chala lega (crash nahi hoga).")
         st.session_state.wait_for = st.text_input("Wait for CSS selector",
                                                   st.session_state.wait_for,
                                                   placeholder=".product-card")
@@ -181,6 +186,16 @@ with st.sidebar:
             help="Key do to LLM page text ko tumhari query ke hisaab se rows me shape karega. "
                  "Khaali chhodo to sirf rule-based extractors chalenge.")
     st.divider()
+    if st.button("🧪  LOAD TEST TARGETS", use_container_width=True,
+                 help="Do sites jo scraping practice ke liye hi banayi gayi hain — "
+                      "inse tum turant dekh sakte ho ki extraction poora kaam karta hai."):
+        st.session_state.targets_raw = ("https://books.toscrape.com/\n"
+                                        "https://quotes.toscrape.com/")
+        st.session_state.query = ("saare product names aur price nikalo, headings aur "
+                                  "internal links bhi")
+        st.session_state.pages = 3
+        st.session_state.report = None
+        st.rerun()
     if st.button("⟳  RESET EVERYTHING", use_container_width=True):
         reset_all()
         st.rerun()
@@ -192,7 +207,12 @@ with st.sidebar:
                 ("playwright", "yes" if (tf and tf.HAVE_PLAYWRIGHT) else "no")]
         if tf:
             ok, info = tf.chromium_available()
-            rows.append(("chromium", "yes" if ok else "no"))
+            rows.append(("chromium binary", "yes" if ok else "no"))
+            if ok:
+                lok, linfo = tf.browser_probe()
+                rows.append(("chromium launches", "yes" if lok else "NO"))
+                if not lok:
+                    st.session_state["_browser_why"] = linfo
             try:
                 c = tf.PageCache(os.environ.get("TIMU_CACHE", ".timu_cache"))
                 rows.append(("cache", f"{c.backend}, {c.stats()['pages']} pages"))
@@ -200,6 +220,12 @@ with st.sidebar:
                 rows.append(("cache", f"unavailable ({e.__class__.__name__})"))
         st.dataframe(pd.DataFrame(rows, columns=["capability", "status"]),
                      hide_index=True, use_container_width=True)
+        why = st.session_state.get("_browser_why")
+        if why:
+            st.markdown(f'<div class="timu-note">browser render nahi chalega: {why}</div>',
+                        unsafe_allow_html=True)
+            st.caption("Streamlit Cloud pe repo ke `packages.txt` me system libraries hain — "
+                       "usse deploy karo, phir app reboot pe browser mode chal jayega.")
         if tf and tf.HAVE_PLAYWRIGHT and not tf.chromium_available()[0]:
             st.caption("Browser render ke liye Chromium chahiye.")
             if st.button("⬇ install chromium (one-time)", use_container_width=True):
@@ -347,6 +373,38 @@ def field_frame(name: str, value) -> pd.DataFrame | None:
     return None
 
 
+def show_advice(site: dict, key: str):
+    """A site refused us — show what it does permit (robots rules + its sitemaps)."""
+    adv = ((site.get("fetch") or {}).get("advice")) or {}
+    if not adv:
+        return
+    if adv.get("verdict"):
+        st.markdown(f'<div class="timu-note">{adv["verdict"]}</div>', unsafe_allow_html=True)
+    st.dataframe(pd.DataFrame([
+        {"field": "robots.txt", "value": adv.get("robots_url", "")},
+        {"field": "robots available", "value": "yes" if adv.get("robots_available") else "no"},
+        {"field": "rules apply to", "value": adv.get("applies_to") or "—"},
+        {"field": "crawl-delay", "value": adv.get("crawl_delay") or "—"},
+        {"field": "Allow", "value": ", ".join(adv.get("allow") or []) or "—"},
+        {"field": "Disallow", "value": ", ".join((adv.get("disallow") or [])[:12]) or "—"},
+    ]), hide_index=True, use_container_width=True)
+    if adv.get("sitemaps"):
+        st.caption("sitemaps the site advertises")
+        st.dataframe(pd.DataFrame([{k: (", ".join(v[:2]) if isinstance(v, list) else v)
+                                    for k, v in sm.items()} for sm in adv["sitemaps"]]),
+                     hide_index=True, use_container_width=True)
+    samples = adv.get("sample_urls") or []
+    if samples:
+        st.caption(f"{len(samples)} URL(s) jo site khud sitemap me publish karti hai — "
+                   f"inhe target bana kar dubara try karo")
+        st.dataframe(pd.DataFrame({"url": samples}), hide_index=True, use_container_width=True)
+        if st.button("➜ in URLs ko TARGETS me daal do", key=f"adv_{key}",
+                     use_container_width=False):
+            st.session_state.targets_raw = "\n".join(samples[:MAX])
+            st.session_state.report = None
+            st.rerun()
+
+
 def show_field(name: str, value, filt: str):
     n = len(value) if isinstance(value, (list, dict)) else 1
     with st.expander(f"{name}  ·  {n}", expanded=(name in ("items", "meta", "tables"))):
@@ -475,6 +533,8 @@ if R:
                                      hide_index=True, use_container_width=True)
                 for n in f.get("notes") or []:
                     st.markdown(f'<div class="timu-note">{n}</div>', unsafe_allow_html=True)
+                if not s.get("ok"):
+                    show_advice(s, f"intel_{s.get('target')}")
 
     # ---- per site ----
     for tab, s in zip(tabs[2:], R.get("sites", [])):
@@ -483,9 +543,12 @@ if R:
                 st.warning("no data")
                 continue
             if not s.get("ok"):
-                st.error(f"{s.get('target')} — {s.get('error')}")
-                st.caption("Try: poora https:// URL · spelling · site JS-rendered ho to RENDER "
-                           "= browser · robots.txt disallow ho to Timu fetch nahi karega.")
+                st.error(f"{s.get('target')} — HTTP {s.get('status') or '—'} · "
+                         f"{s.get('error') or 'fetch failed'}")
+                show_advice(s, f"site_{s.get('target')}")
+                st.caption("Aur try karne layak: poora https:// URL · spelling · site "
+                           "JS-rendered ho to RENDER = browser · apne network se chalao "
+                           "(datacenter IP blocks bahut common hain).")
                 continue
             st.caption(f"{s.get('url')}  ·  HTTP {s.get('status')}  ·  "
                        f"{s.get('pages_fetched')} page(s)  ·  {s.get('elapsed_ms')}ms")

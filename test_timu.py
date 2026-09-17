@@ -201,7 +201,47 @@ def main() -> int:
     check("cache stats", cache.stats()["pages"] >= 1, cache.stats())
     cache.clear()
 
-    print("\n[8] graceful degradation")
+    print("\n[8] robots.txt understanding (blocked-site advice)")
+    ROBOTS = """
+User-agent: *
+Disallow: /cart
+Disallow: /checkout
+Allow: /products
+Crawl-delay: 2
+
+User-agent: BadBot
+Disallow: /
+
+Sitemap: https://shop.test/sitemap.xml
+Sitemap: https://shop.test/sitemap-products.xml
+"""
+    groups, sitemaps = tf.parse_robots_groups(ROBOTS)
+    check("robots groups parsed", set(groups) == {"*", "badbot"}, sorted(groups))
+    check("wildcard disallow list", groups["*"]["disallow"] == ["/cart", "/checkout"],
+          groups["*"]["disallow"])
+    check("wildcard allow list", groups["*"]["allow"] == ["/products"], groups["*"]["allow"])
+    check("crawl-delay read", groups["*"]["crawl_delay"] == 2.0, groups["*"]["crawl_delay"])
+    check("named agent blanket block", groups["badbot"]["disallow"] == ["/"],
+          groups["badbot"]["disallow"])
+    check("sitemap lines collected", len(sitemaps) == 2, sitemaps)
+    g2, s2 = tf.parse_robots_groups("User-agent: a\nUser-agent: b\nDisallow: /x\n")
+    check("stacked user-agents share rules",
+          g2.get("a", {}).get("disallow") == ["/x"] == g2.get("b", {}).get("disallow"), g2)
+    check("empty robots is safe", tf.parse_robots_groups("") == ({}, []))
+
+    print("\n[9] browser failure hints")
+    LIBERR = ("TargetClosedError: BrowserType.launch: Target page, context or browser has "
+              "been closed\nBrowser logs:\n /home/appuser/.cache/ms-playwright/"
+              "chromium_headless_shell-1243/chrome-headless-shell: error while loading shared "
+              "libraries: libglib-2.0.so.0: cannot open shared object file: No such file")
+    h = tf.browser_hint(LIBERR)
+    check("missing OS library recognised", "libglib-2.0.so.0" in h and "packages.txt" in h, h)
+    check("missing binary recognised",
+          "playwright install chromium" in tf.browser_hint("Executable doesn't exist at /x"))
+    check("timeout recognised", "timeout" in tf.browser_hint("TimeoutError: Timeout 30000ms"))
+    check("unknown error passed through", tf.browser_hint("Boom: something odd") != "")
+
+    print("\n[10] graceful degradation")
     cfg = te.TimuConfig(transport="legacy")
     try:
         r = te.TimuScraper(cfg).run(["https://definitely-not-real.invalid/"], "emails")

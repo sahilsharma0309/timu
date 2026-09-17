@@ -43,6 +43,7 @@ FILES: dict[str, str] = {
     "LICENSE": "LICENSE",
     ".gitignore": ".gitignore",
     "requirements.txt": "requirements.txt",
+    "packages.txt": "packages.txt",
     "streamlit_app.py": "streamlit_app.py",
     "timu_app.py": "timu_app.py",
     "timu_ui.html": "timu_ui.html",
@@ -51,6 +52,8 @@ FILES: dict[str, str] = {
     "timu_doctor.py": "timu_doctor.py",
     "test_timu.py": "test_timu.py",
     "push_to_github.py": "push_to_github.py",
+    "github_push.bat": "github_push.bat",
+    "github_push.sh": "github_push.sh",
     "run_timu.bat": "run_timu.bat",
     "run_timu.sh": "run_timu.sh",
     ".streamlit/config.toml": "_streamlit_config.toml",
@@ -61,7 +64,7 @@ FILES: dict[str, str] = {
     "examples/timu_demo_report.md": "timu_demo_report.md",
     "examples/timu_demo_report.xlsx": "timu_demo_report.xlsx",
 }
-EXEC_BITS = {"run_timu.sh"}          # pushed with mode 100755
+EXEC_BITS = {"run_timu.sh", "github_push.sh"}          # pushed with mode 100755
 
 
 def call(path: str, token: str, method: str = "GET", body: dict | None = None):

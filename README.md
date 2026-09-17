@@ -38,7 +38,7 @@ python timu_app.py                      # Flask UI on http://127.0.0.1:7801
 python timu_engine.py https://site-a.com https://site-b.com -q "emails and prices"
 
 python timu_doctor.py                   # what's installed / what's missing
-python test_timu.py                     # 47 offline checks, no network needed
+python test_timu.py                     # 59 offline checks, no network needed
 ```
 
 JavaScript-rendered sites additionally need a browser, once:
@@ -55,9 +55,16 @@ Windows users can just double-click `run_timu.bat` (creates a venv, installs, la
 2. [share.streamlit.io](https://share.streamlit.io) → **New app** → pick this repo.
 3. Branch `main`, main file **`streamlit_app.py`** → **Deploy**.
 
-`requirements.txt` is all the config it needs. Chromium is not preinstalled on that
-host — the app's sidebar has a one-time **install chromium** button, and if the host
-refuses, Timu stays on the HTTP path instead of failing.
+`requirements.txt` and `packages.txt` are all the config it needs.
+
+Browser render needs two things on a hosted machine, and they fail separately: the
+Chromium **binary** (the sidebar's one-time **install chromium** button) and the OS
+**shared libraries** it links against. `packages.txt` in this repo carries that library
+list — Streamlit Cloud installs it at build time; a bare `playwright install chromium`
+without it launches and dies with `libglib-2.0.so.0: cannot open shared object file`.
+The sidebar reports both separately (`chromium binary` / `chromium launches`), and a
+browser that cannot start degrades the run to HTTP render instead of taking the async
+transport down with it.
 
 ---
 
@@ -149,6 +156,26 @@ key, only the deterministic rule-based extractors run — everything else works 
 
 ---
 
+## When a site refuses the fetch
+
+Blocks are normal, so Timu treats them as a question — *what does this site permit?* — and
+answers it instead of failing silently. On a `401/403/405/406/429/451` or a robots.txt
+disallow it reads the site's **own published rules**: which robots.txt user-agent group
+applies to Timu, its `Allow` / `Disallow` paths, any `Crawl-delay`, and every sitemap the
+site advertises, with sample URLs pulled from them. The UI shows this next to the failed
+site, with a button to load those sitemap URLs straight into TARGETS.
+
+That distinction matters: a blanket `Disallow: /` means the site does not want automated
+access and Timu stops there; a 403 with a permissive robots.txt usually means the refusal
+is user-agent or datacenter-IP based (Streamlit Cloud, CI runners), which is why the same
+target often works when you run Timu on your own machine. Either way it is read-only
+reconnaissance of what the site publishes about itself — no probing of undeclared paths,
+and the refused URL is never retried under a different identity.
+
+In the Streamlit sidebar, **🧪 LOAD TEST TARGETS** fills in two sites built for scraping
+practice (`books.toscrape.com`, `quotes.toscrape.com`) so you can confirm end-to-end
+extraction in one click before pointing Timu at a site that may block it.
+
 ## Scope and ethics
 
 Timu is built for **public, permitted data**, and it says who it is: every request
@@ -175,7 +202,7 @@ blocked, and `css:` queries need `soupsieve` installed (it's in requirements).
 
 ## Testing status
 
-* `python test_timu.py` → **47/47 pass** — extraction (emails, phones, prices, items,
+* `python test_timu.py` → **59/59 pass** — extraction (emails, phones, prices, items,
   tables, addresses, dates, JSON-LD, links), Hinglish + English intent detection,
   common-data + Jaccard overlap, all exporters, cache roundtrip, sitemap parsing,
   JS-shell detection, and graceful degradation — all on synthetic fixtures, no network.

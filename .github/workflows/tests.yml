@@ -23,5 +23,5 @@ jobs:
           pip install beautifulsoup4 soupsieve lxml pandas "httpx[http2]" openpyxl
       - name: doctor
         run: python timu_doctor.py
-      - name: offline test suite (47 checks, no network)
+      - name: offline test suite (59 checks, no network)
         run: python test_timu.py

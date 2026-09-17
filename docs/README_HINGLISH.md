@@ -16,7 +16,7 @@ timu_fetch.py      transport: async HTTP/2, cache, robots, browser render, disco
 timu_app.py        Flask server: UI + /api/* endpoints
 timu_ui.html       animated interface (bina server bhi khulta hai — DEMO MODE)
 timu_doctor.py     kya installed hai / kya missing hai — diagnostics
-test_timu.py       offline test suite (47 checks, network ki zarurat nahi)
+test_timu.py       offline test suite (59 checks, network ki zarurat nahi)
 requirements.txt   dependencies
 run_timu.bat       Windows: double-click -> venv + install + browser
 run_timu.sh        macOS/Linux: bash run_timu.sh
@@ -87,7 +87,7 @@ Cache folder badalna ho: `TIMU_CACHE=path python timu_app.py`.
 
 ```bash
 python timu_doctor.py     # kaunsa package hai, chromium hai ya nahi, cache backend, engine version
-python test_timu.py       # 47 offline checks (network ke bina) — extraction, common-data, exports
+python test_timu.py       # 59 offline checks (network ke bina) — extraction, common-data, exports
 python timu_fetch.py https://example.com   # live transport test: pages, renderer, discovery
 ```
 
@@ -243,7 +243,7 @@ hote hain. Ye scope se bahar hai.
 
 ## 7. Testing status (honest)
 
-* **`python test_timu.py` → 47/47 pass.** Ye extraction (emails / phones / prices /
+* **`python test_timu.py` → 59/59 pass.** Ye extraction (emails / phones / prices /
   items / tables / addresses / dates / JSON-LD / links), intent detection (Hinglish +
   English), common-data + Jaccard overlap, teeno exporters, cache roundtrip, sitemap
   parsing, JS-shell detection, aur graceful degradation — sab synthetic HTML fixtures
