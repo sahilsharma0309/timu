@@ -34,7 +34,7 @@ body{
 
 /* ---------- header ---------- */
 header{display:flex;align-items:center;gap:18px;flex-wrap:wrap;margin-bottom:6px}
-.logo{position:relative;width:56px;height:56px;flex:0 0 auto}
+.logo{position:relative;width:62px;height:62px;flex:0 0 auto;display:grid;place-items:center}
 .logo i{position:absolute;inset:0;border:2px solid var(--cyan);border-radius:14px;
   animation:spin 9s linear infinite;box-shadow:0 0 24px rgba(34,230,255,.45) inset}
 .logo i:nth-child(2){inset:9px;border-color:var(--pink);animation-duration:6s;animation-direction:reverse}
@@ -205,7 +205,45 @@ footer{text-align:center;font-size:10px;color:var(--dim);letter-spacing:2.4px;ma
 
 <div class="wrap">
   <header>
-    <div class="logo"><i></i><i></i><i></i></div>
+    <div class="logo" id="mark"><svg class="tlmark" viewBox="0 0 120 120" width="62" height="62" fill="none"
+     xmlns="http://www.w3.org/2000/svg">
+  <style>
+    .tlmark g{transform-box:fill-box;transform-origin:center}
+    .tlmark .outer{animation:tlspin 9s linear infinite}
+    .tlmark .mid{animation:tlspin 6s linear infinite reverse}
+    .tlmark .core{animation:tlcore 3.2s ease-in-out infinite}
+    .tlmark .halo{animation:tlhalo 3.2s ease-in-out infinite}
+    .tlmark.busy .outer{animation-duration:1.5s}
+    .tlmark.busy .mid{animation-duration:1s}
+    .tlmark.busy .core{animation-duration:.8s}
+    @keyframes tlspin{to{transform:rotate(360deg)}}
+    @keyframes tlcore{0%,100%{transform:rotate(0deg) scale(1)}
+                      50%{transform:rotate(180deg) scale(1.18)}}
+    @keyframes tlhalo{0%,100%{opacity:.25;transform:scale(1)}
+                      50%{opacity:.6;transform:scale(1.1)}}
+  </style>
+  <defs>
+    <filter id="tlglow" x="-60%" y="-60%" width="220%" height="220%">
+      <feGaussianBlur stdDeviation="3.2" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <linearGradient id="tlo" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#7fe9ff"/><stop offset="1" stop-color="#22e6ff"/>
+    </linearGradient>
+  </defs>
+  <g class="halo"><rect x="10" y="10" width="100" height="100" rx="30"
+        fill="rgba(34,230,255,.10)" stroke="rgba(34,230,255,.35)" stroke-width="2"/></g>
+  <g filter="url(#tlglow)">
+    <g class="outer"><rect x="16" y="16" width="88" height="88" rx="26"
+          fill="rgba(10,30,45,.55)" stroke="url(#tlo)" stroke-width="4"
+          stroke-linejoin="round"/></g>
+    <g class="mid"><rect x="35" y="35" width="50" height="50" rx="17"
+          stroke="#ff4d9d" stroke-width="4" stroke-linejoin="round"/></g>
+    <g class="core"><rect x="48" y="48" width="24" height="24" rx="9"
+          fill="rgba(57,255,176,.22)" stroke="#39ffb0" stroke-width="3.5"
+          stroke-linejoin="round"/></g>
+  </g>
+</svg></div>
     <div>
       <h1>TIMU</h1>
       <div class="tag">QUERY&nbsp;→&nbsp;DISCOVER&nbsp;→&nbsp;RENDER&nbsp;→&nbsp;EXTRACT&nbsp;→&nbsp;COMPARE&nbsp;→&nbsp;DOWNLOAD</div>
@@ -412,6 +450,7 @@ async function run(){
   if(!S.targets.length){addTargets($('tin').value);$('tin').value='';}
   if(!S.targets.length){toast('Pehle koi URL ya site name daalo');$('tin').focus();return}
   S.busy=true;$('go').disabled=true;$('results').style.display='none';
+  document.querySelector('#mark .tlmark')?.classList.add('busy');
   $('progwrap').style.display='block';$('term').innerHTML='';bar(4);
   $('phase').textContent='running…';$('phase').className='cursor';
   const payload={targets:S.targets,query:$('q').value,
@@ -453,7 +492,7 @@ async function run(){
   }
   $('phase').textContent='complete';$('phase').className='';
   log(`[${stamp()}] done in ${S.report.elapsed_s}s · ${S.report.summary.succeeded}/${S.report.summary.requested} ok · ${S.report.summary.total_records} records`,'t-ok');
-  render();S.busy=false;$('go').disabled=false;
+  render();S.busy=false;document.querySelector('#mark .tlmark')?.classList.remove('busy');$('go').disabled=false;
 }
 
 /* ============================================================ rendering */
@@ -651,7 +690,7 @@ function toMD(R){
 
 /* =============================================================== reset */
 $('reset').onclick=()=>{
-  S.targets=[];S.report=null;S.active=0;S.busy=false;
+  S.targets=[];S.report=null;S.active=0;S.busy=false;document.querySelector('#mark .tlmark')?.classList.remove('busy');
   drawChips();$('tin').value='';$('q').value='';$('filter').value='';
   $('pages').value=1;$('pagesv').textContent='1';
   $('robots').classList.add('on');$('cache').classList.add('on');$('disc').classList.add('on');

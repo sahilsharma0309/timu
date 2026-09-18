@@ -89,17 +89,69 @@ textarea, .stTextInput input{background:rgba(4,10,20,.85)!important;color:#d7e6f
 </style>
 """, unsafe_allow_html=True)
 
+LOGO_TPL = """
+<style>
+.tl-wrap{display:grid;place-items:center}
+.tl svg{overflow:visible}
+.tl g{transform-box:fill-box;transform-origin:center}
+.tl .outer{animation:tlspin 9s linear infinite}
+.tl .mid{animation:tlspin 6s linear infinite reverse}
+.tl .core{animation:tlcore 3.2s ease-in-out infinite}
+.tl .halo{animation:tlhalo 3.2s ease-in-out infinite}
+.tl.busy .outer{animation-duration:1.5s}
+.tl.busy .mid{animation-duration:1s}
+.tl.busy .core{animation-duration:.8s}
+@keyframes tlspin{to{transform:rotate(360deg)}}
+@keyframes tlcore{0%,100%{transform:rotate(0deg) scale(1)}50%{transform:rotate(180deg) scale(1.18)}}
+@keyframes tlhalo{0%,100%{opacity:.25;transform:scale(1)}50%{opacity:.6;transform:scale(1.1)}}
+</style>
+<div class="tl-wrap"><div class="tl {cls}">
+<svg viewBox="0 0 120 120" width="{size}" height="{size}" fill="none">
+  <defs>
+    <filter id="tlglow{uid}" x="-60%" y="-60%" width="220%" height="220%">
+      <feGaussianBlur stdDeviation="3.2" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <linearGradient id="tlo{uid}" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#7fe9ff"/><stop offset="1" stop-color="#22e6ff"/>
+    </linearGradient>
+  </defs>
+  <g class="halo"><rect x="10" y="10" width="100" height="100" rx="30"
+        fill="rgba(34,230,255,.10)" stroke="rgba(34,230,255,.35)" stroke-width="2"/></g>
+  <g filter="url(#tlglow{uid})">
+    <g class="outer"><rect x="16" y="16" width="88" height="88" rx="26"
+          fill="rgba(10,30,45,.55)" stroke="url(#tlo{uid})" stroke-width="4"
+          stroke-linejoin="round"/></g>
+    <g class="mid"><rect x="35" y="35" width="50" height="50" rx="17"
+          stroke="#ff4d9d" stroke-width="4" stroke-linejoin="round"/></g>
+    <g class="core"><rect x="48" y="48" width="24" height="24" rx="9"
+          fill="rgba(57,255,176,.22)" stroke="#39ffb0" stroke-width="3.5"
+          stroke-linejoin="round"/></g>
+  </g>
+</svg></div></div>
+"""
+
+
+def logo(size: int = 92, busy: bool = False, uid: str = "a") -> str:
+    """The Timu mark: three nested rounded squares, counter-rotating."""
+    return LOGO_TPL.replace("{size}", str(size)).replace(
+        "{cls}", "busy" if busy else "").replace("{uid}", uid)
+
+
 HEADER = """
 <div style="position:relative;height:150px;border-radius:16px;overflow:hidden;
      border:1px solid rgba(34,230,255,.22);background:#05080f">
 <canvas id="c" style="position:absolute;inset:0"></canvas>
-<div style="position:absolute;inset:0;display:flex;flex-direction:column;
-     justify-content:center;padding:0 26px;font-family:Consolas,monospace">
+<div style="position:absolute;inset:0;display:flex;align-items:center;
+     gap:22px;padding:0 26px;font-family:Consolas,monospace">
+  __LOGO__
+  <div>
   <div style="font-size:42px;font-weight:800;letter-spacing:12px;
        background:linear-gradient(92deg,#22e6ff,#39ffb0 40%,#a97bff 75%,#ff4d9d);
        -webkit-background-clip:text;background-clip:text;color:transparent">TIMU</div>
   <div style="font-size:11px;letter-spacing:3px;color:#6f8399;margin-top:6px">
      QUERY → DISCOVER → RENDER → EXTRACT → COMPARE → DOWNLOAD</div>
+  </div>
 </div></div>
 <script>
 const cv=document.getElementById('c'),x=cv.getContext('2d');let w,h,P=[];
@@ -158,6 +210,7 @@ def kind_of(t: str) -> str:
 
 # --------------------------------------------------------------- sidebar ----
 with st.sidebar:
+    components.html(logo(74, uid="side"), height=96)
     st.markdown("### ⚙ CONFIG")
     st.session_state.pages = st.slider("Pages per site", 1, 8, st.session_state.pages,
                                        help="1 = sirf wahi page. >1 pe Timu sitemap / feed / "
@@ -248,7 +301,7 @@ with st.sidebar:
                "hai (FETCH INTEL tab dekho).")
 
 # ---------------------------------------------------------------- header ----
-components.html(HEADER, height=162)
+components.html(HEADER.replace("__LOGO__", logo(96, uid="hdr")), height=162)
 
 # ---------------------------------------------------------------- inputs ----
 c1, c2 = st.columns([1, 1], gap="large")
@@ -293,7 +346,10 @@ go = run_col.button("⚡  EXTRACT DATA", type="primary", use_container_width=Tru
 # ------------------------------------------------------------------- run ----
 if go and targets:
     st.session_state.logs = []
-    log_box = st.empty()
+    spin_col, log_col = st.columns([1, 9])
+    with spin_col:
+        components.html(logo(66, busy=True, uid="run"), height=88)
+    log_box = log_col.empty()
     prog = st.progress(0.0, text="booting Timu…")
     done = {"n": 0}
     total = max(1, len(targets))

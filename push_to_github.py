@@ -44,6 +44,7 @@ FILES: dict[str, str] = {
     ".gitignore": ".gitignore",
     "requirements.txt": "requirements.txt",
     "packages.txt": "packages.txt",
+    "assets/timu_logo.svg": "timu_logo.svg",
     "streamlit_app.py": "streamlit_app.py",
     "timu_app.py": "timu_app.py",
     "timu_ui.html": "timu_ui.html",
