@@ -1,0 +1,39 @@
+<svg class="tlmark" viewBox="0 0 120 120" width="120" height="120" fill="none"
+     xmlns="http://www.w3.org/2000/svg">
+  <style>
+    .tlmark g{transform-box:fill-box;transform-origin:center}
+    .tlmark .outer{animation:tlspin 9s linear infinite}
+    .tlmark .mid{animation:tlspin 6s linear infinite reverse}
+    .tlmark .core{animation:tlcore 3.2s ease-in-out infinite}
+    .tlmark .halo{animation:tlhalo 3.2s ease-in-out infinite}
+    .tlmark.busy .outer{animation-duration:1.5s}
+    .tlmark.busy .mid{animation-duration:1s}
+    .tlmark.busy .core{animation-duration:.8s}
+    @keyframes tlspin{to{transform:rotate(360deg)}}
+    @keyframes tlcore{0%,100%{transform:rotate(0deg) scale(1)}
+                      50%{transform:rotate(180deg) scale(1.18)}}
+    @keyframes tlhalo{0%,100%{opacity:.25;transform:scale(1)}
+                      50%{opacity:.6;transform:scale(1.1)}}
+  </style>
+  <defs>
+    <filter id="tlglow" x="-60%" y="-60%" width="220%" height="220%">
+      <feGaussianBlur stdDeviation="3.2" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <linearGradient id="tlo" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#7fe9ff"/><stop offset="1" stop-color="#22e6ff"/>
+    </linearGradient>
+  </defs>
+  <g class="halo"><rect x="10" y="10" width="100" height="100" rx="30"
+        fill="rgba(34,230,255,.10)" stroke="rgba(34,230,255,.35)" stroke-width="2"/></g>
+  <g filter="url(#tlglow)">
+    <g class="outer"><rect x="16" y="16" width="88" height="88" rx="26"
+          fill="rgba(10,30,45,.55)" stroke="url(#tlo)" stroke-width="4"
+          stroke-linejoin="round"/></g>
+    <g class="mid"><rect x="35" y="35" width="50" height="50" rx="17"
+          stroke="#ff4d9d" stroke-width="4" stroke-linejoin="round"/></g>
+    <g class="core"><rect x="48" y="48" width="24" height="24" rx="9"
+          fill="rgba(57,255,176,.22)" stroke="#39ffb0" stroke-width="3.5"
+          stroke-linejoin="round"/></g>
+  </g>
+</svg>
