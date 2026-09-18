@@ -241,7 +241,22 @@ Sitemap: https://shop.test/sitemap-products.xml
     check("timeout recognised", "timeout" in tf.browser_hint("TimeoutError: Timeout 30000ms"))
     check("unknown error passed through", tf.browser_hint("Boom: something odd") != "")
 
-    print("\n[10] graceful degradation")
+    print("\n[10] page vs feed/sitemap URLs")
+    check("html page is page-like", tf.is_page_like("https://x.test/products/page/2"))
+    check("sitemap rejected", not tf.is_page_like("https://x.test/sitemap.xml"))
+    check("rss query rejected", not tf.is_page_like("https://x.test/?format=feed&type=rss"))
+    check("atom path rejected", not tf.is_page_like("https://x.test/blog/atom"))
+    check("pdf rejected", not tf.is_page_like("https://x.test/report.pdf"))
+    check("favicon rejected", not tf.is_page_like("https://x.test/templates/favicon.ico"))
+    check("image rejected", not tf.is_page_like("https://x.test/img/hero.webp"))
+    check("cdn-cgi infra rejected", not tf.is_page_like("https://x.test/cdn-cgi/content?id=abc"))
+    check("tracking-length query rejected",
+          not tf.is_page_like("https://x.test/p?id=" + "z" * 240))
+    check("xml doc routed to xml parser",
+          te.looks_like_xml('<?xml version="1.0"?><rss><channel/></rss>'))
+    check("html doc not routed to xml parser", not te.looks_like_xml("<!doctype html><html>"))
+
+    print("\n[11] graceful degradation")
     cfg = te.TimuConfig(transport="legacy")
     try:
         r = te.TimuScraper(cfg).run(["https://definitely-not-real.invalid/"], "emails")

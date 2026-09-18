@@ -39,6 +39,7 @@ from __future__ import annotations
 
 import asyncio
 import gzip
+import html as _html
 import hashlib
 import json
 import re
@@ -616,6 +617,33 @@ def _xml_locs(text: str) -> tuple[list[str], list[str]]:
     return pages, maps
 
 
+_NON_PAGE_RE = re.compile(
+    r"\.(?:xml|xml\.gz|rss|atom|json|jsonld|csv|tsv|txt|pdf|zip|gz|tar|"
+    r"ico|png|jpe?g|gif|webp|avif|bmp|svg|css|js|mjs|map|"
+    r"woff2?|ttf|otf|eot|mp[34]|m4[av]|wav|avi|mov|webm|"
+    r"docx?|xlsx?|pptx?|rtf|epub)$", re.I)
+_FEED_PATH_RE = re.compile(r"(?:^|/)(?:feed|feeds|rss|atom)/?$", re.I)
+# infrastructure paths that never hold content
+_JUNK_PATH_RE = re.compile(r"/cdn-cgi/|/wp-json/|/xmlrpc\.php|/__|/cgi-bin/", re.I)
+
+
+def is_page_like(url: str) -> bool:
+    """Is this URL an HTML page (worth running the extractors on)?
+
+    Sitemaps, feeds and data files are found *by* discovery and are useful as
+    leads, but feeding them to an HTML extractor produces noise — a feed is XML,
+    not a page.
+    """
+    clean = url.split("#")[0]
+    path = up.urlsplit(clean).path
+    if _NON_PAGE_RE.search(path) or _FEED_PATH_RE.search(path) or _JUNK_PATH_RE.search(path):
+        return False
+    if len(up.urlsplit(clean).query) > 220:            # tracking/session junk, not a page
+        return False
+    q = up.urlsplit(clean).query.lower()
+    return not any(t in q for t in ("format=feed", "format=rss", "format=atom", "output=rss"))
+
+
 async def discover_urls(fetcher: AsyncHttpFetcher, start_url: str, *,
                         want: int = 25, use_sitemap: bool = True,
                         use_feeds: bool = True, follow_next: int = 5,
@@ -636,17 +664,22 @@ async def discover_urls(fetcher: AsyncHttpFetcher, start_url: str, *,
         cand += re.findall(r"(?im)^\s*sitemap:\s*(\S+)", raw or "")
         cand += [up.urljoin(origin, p) for p in SITEMAP_PATHS]
         seen_map = set()
+        t_start = time.monotonic()
+        budget = getattr(fetcher.cfg, "discovery_budget_s", 8.0)
+        cap = getattr(fetcher.cfg, "max_sitemap_bytes", 2_000_000)
         for sm in cand[:6]:
-            if sm in seen_map:
+            if sm in seen_map or (time.monotonic() - t_start) > budget:
                 continue
             seen_map.add(sm)
             r = await fetcher.get(sm)
-            if not r.ok or "<" not in r.body[:400]:
+            if not r.ok or "<" not in r.body[:400] or len(r.body) > cap:
                 continue
             pages, nested = _xml_locs(r.body)
-            for n in nested[:3]:
+            for n in nested[:2]:
+                if (time.monotonic() - t_start) > budget:
+                    break
                 rn = await fetcher.get(n)
-                if rn.ok:
+                if rn.ok and len(rn.body) <= cap:
                     p2, _ = _xml_locs(rn.body)
                     pages += p2
             if pages:
@@ -663,7 +696,8 @@ async def discover_urls(fetcher: AsyncHttpFetcher, start_url: str, *,
         for tagtxt in FEED_RE.findall(first.body)[:5]:
             m = HREF_RE.search(tagtxt)
             if m:
-                out["feeds"].append(up.urljoin(first.final_url or start_url, m.group(1)))
+                out["feeds"].append(up.urljoin(first.final_url or start_url,
+                                               _html.unescape(m.group(1))))
 
     # 3. rel=next pagination chain
     if follow_next and first.ok:
@@ -674,11 +708,11 @@ async def discover_urls(fetcher: AsyncHttpFetcher, start_url: str, *,
             if m:
                 h = HREF_RE.search(m.group(0))
                 if h:
-                    nxt = up.urljoin(cur, h.group(1))
+                    nxt = up.urljoin(cur, _html.unescape(h.group(1)))
             if not nxt:
                 m2 = A_NEXT_RE.search(body)
                 if m2:
-                    nxt = up.urljoin(cur, m2.group(1))
+                    nxt = up.urljoin(cur, _html.unescape(m2.group(1)))
             if not nxt or nxt == cur:
                 break
             out["pagination"].append(nxt)
@@ -696,7 +730,7 @@ async def discover_urls(fetcher: AsyncHttpFetcher, start_url: str, *,
         for href in HREF_RE.findall(first.body):
             if href.startswith(("mailto:", "tel:", "javascript:", "#")):
                 continue
-            u = up.urljoin(base, href).split("#")[0].rstrip("/")
+            u = up.urljoin(base, _html.unescape(href)).split("#")[0].rstrip("/")
             if up.urlsplit(u).netloc != host:
                 continue
             if re.search(r"\.(?:pdf|zip|png|jpe?g|gif|svg|mp4|mp3|docx?|xlsx?|css|js)$", u, re.I):
@@ -924,8 +958,13 @@ async def smart_fetch_site(url: str, *, cfg: FetchConfig | None = None,
         if pages > 1 and first.ok:
             disc = await discover_urls(f, url, want=max(pages * 2, 12), first=first,
                                        use_sitemap=discover, use_feeds=discover)
-            extra = [u for u in disc["urls"] if u.rstrip("/") != (first.final_url or url).rstrip("/")]
-            extra = extra[: pages - 1]
+            rank = {"sitemap": 0, "pagination": 1, "link": 2}
+            cands_extra = [u for u in disc["urls"]
+                           if u.rstrip("/") != (first.final_url or url).rstrip("/")
+                           and is_page_like(u)]
+            extra = sorted(cands_extra,
+                           key=lambda u: rank.get((disc.get("source") or {}).get(u), 3)
+                           )[: pages - 1]
             if extra:
                 if use_browser and browser is not None:
                     for u in extra:

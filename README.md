@@ -38,7 +38,7 @@ python timu_app.py                      # Flask UI on http://127.0.0.1:7801
 python timu_engine.py https://site-a.com https://site-b.com -q "emails and prices"
 
 python timu_doctor.py                   # what's installed / what's missing
-python test_timu.py                     # 59 offline checks, no network needed
+python test_timu.py                     # 70 offline checks, no network needed
 ```
 
 JavaScript-rendered sites additionally need a browser, once:
@@ -202,17 +202,21 @@ blocked, and `css:` queries need `soupsieve` installed (it's in requirements).
 
 ## Testing status
 
-* `python test_timu.py` → **59/59 pass** — extraction (emails, phones, prices, items,
+* `python test_timu.py` → **70/70 pass** — extraction (emails, phones, prices, items,
   tables, addresses, dates, JSON-LD, links), Hinglish + English intent detection,
   common-data + Jaccard overlap, all exporters, cache roundtrip, sitemap parsing,
   JS-shell detection, and graceful degradation — all on synthetic fixtures, no network.
 * CI runs the doctor + the offline suite on Python 3.11 and 3.12.
 * Live run recorded in `examples/`: 4 real sites (reactome, string-db, clinicaltrials,
   ncbi), 2 pages each → 4/4 ok, 330 records, with shared values across sites.
-* The async HTTP/2 transport and browser rendering were developed and unit-tested but
-  the end-to-end **speed benchmark has not been run on a clean machine yet** — run
-  `python timu_fetch.py https://your-site.com` and you'll see per-page renderer, timing,
-  cache status and discovery counts for yourself.
+* Live run on three real sites (reactome.org, string-db.org, ncbi.nlm.nih.gov), 3 pages
+  each, async HTTP/2 transport: **3/3 sites, 7 pages, 757 records in 24.3 s**; a second
+  identical run served 6 pages from cache. Discovery picked real content pages
+  (`/what-is-reactome`, `/about/news`) rather than assets. Output is in `examples/`.
+* Measured effect of the v2.2 discovery fixes on that same run: 86.3 s → 30.0 s fresh and
+  32.1 s → 14.9 s cached (CPU 30 s → 3.3 s), from bounding sitemap work with a time budget
+  and a size cap, and from not handing feeds, favicons and CDN infrastructure URLs to the
+  HTML extractors.
 
 ## Project layout
 

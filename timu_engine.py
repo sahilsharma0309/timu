@@ -53,7 +53,7 @@ __all__ = ["TimuConfig", "TimuScraper", "PageResult", "export_json", "export_csv
            "export_xlsx", "export_markdown", "MAX_TARGETS"]
 
 MAX_TARGETS = 10
-TIMU_VERSION = "2.1"
+TIMU_VERSION = "2.2"
 
 # ---------------------------------------------------------------- config ----
 
@@ -239,7 +239,20 @@ def normalise_target(raw: str) -> list[str]:
 _SOUP_PARSERS = ("lxml", "html.parser")
 
 
+def looks_like_xml(html: str) -> bool:
+    """XML/feed document rather than a web page (so it needs the XML parser)."""
+    head = (html or "")[:600].lstrip().lower()
+    return head.startswith("<?xml") or any(
+        t in head for t in ("<rss", "<feed", "<urlset", "<sitemapindex"))
+
+
 def make_soup(html: str) -> BeautifulSoup:
+    if looks_like_xml(html):
+        for p in ("lxml-xml", "xml"):
+            try:
+                return BeautifulSoup(html, p)
+            except Exception:
+                continue
     for p in _SOUP_PARSERS:
         try:
             return BeautifulSoup(html, p)
